@@ -189,35 +189,28 @@ def wait_for_run(dir_run,settings_sbatch):
         time.sleep(settings_sbatch['sbatch_check_sec'])
         
 def move_and_link(to_link,folder_store):
-    try:
-        # move file to folder_store, and keep a symbolic link
-        if type(to_link)==list:
-            for file in to_link:
-                if not os.path.islink(file):
-                    shutil.move( file, folder_store)
+    # move file to folder_store, and keep a symbolic link
+    if type(to_link)==list:
+        for file in to_link:
+            if not os.path.islink(file):
+                shutil.move( file, folder_store)
 
-                    # link files to rundir
-                    file_ln = os.path.join(folder_store,os.path.basename(file) )
-                    os.symlink(file_ln, os.path.join(dir_run, os.path.basename(file)) )
+                # link files to rundir
+                file_ln = os.path.join(folder_store,os.path.basename(file) )
+                os.symlink(file_ln, file ) #verify this
 
-        elif type(to_link)==str: # in this case 'to_link' is a single file or a folder
-            if not os.path.islink(to_link):
-                shutil.move( to_link, folder_store)
-                print('File/dir moved to storage: %s' % folder_store)
-                      
-                # link files/folder back into the rundir
-                file_ln = os.path.join(folder_store,os.path.basename(to_link) )
-                print('Linking file/dir to %s' % file_ln)
-                if os.path.isdir(to_link): #when it is a dir, simply link it back
-                    print('Moving complete dir to storage & linking...')
-                    os.symlink(file_ln, to_link )    
-                else: #when they are files, link them back to the run directory
-                    print('Moving single file to storage & linking...')
-                    os.symlink(file_ln, os.path.join(dir_run, os.path.basename(to_link)) )        
-        else:
-            raise RuntimeError
-    except:
-        print('File copying to %s failed, continuing run...' % folder_store)
+    elif type(to_link)==str: # in this case 'to_link' is a single file or a folder
+        if not os.path.islink(to_link):
+            shutil.move( to_link, folder_store)
+            print('File/dir moved to storage: %s' % folder_store)
+
+            # link files/folder back into the rundir
+            file_ln = os.path.join(folder_store,os.path.basename(to_link) )
+            print('Linking file/dir from %s to %s' % (file_ln,to_link))
+            os.symlink(file_ln, to_link )   
+             
+    else:
+        raise RuntimeError
         
         
 date_start = datetime(2009,1,1,12,0,0)
@@ -376,20 +369,12 @@ for i1,date_list in enumerate(date_results_binned):
         wait_for_run(dir_run,settings_sbatch)
         os.chdir(dir_setup)
         
-        # dir_store_run = os.path.join(dir_store,os.path.basename(dir_run))
-        # files_out_pfl = sorted(glob(os.path.join(dir_run,'cordex%ix%i*.out.*.nc' % (nx,ny))))
-        # files_out_clm = sorted(glob(os.path.join(dir_run,'clm.clm2.*')))
-        # if not os.path.exists(dir_store_run):
-        #     print('Creating dir: %s' % dir_store_run)
-        #     os.makedirs(dir_store_run)
         if not os.path.exists(dir_store):
             print('Creating dir: %s' % dir_store)
             os.makedirs(dir_store)
         print('Moving files to storage: %s' % dir_store)
         move_and_link(dir_run,dir_store)
         
-        # move_and_link(files_out_clm,dir_store_run)
-
             
     else:
         print('%s exists, continuing...' % dir_run) 
