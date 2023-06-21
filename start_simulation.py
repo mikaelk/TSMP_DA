@@ -8,7 +8,7 @@ import shutil
 import time
 from glob import glob
 
-def bin_dates_by_restart_dates(date_results,date_restarts):
+def bin_dates_by_restart_dates(date_results,date_restarts,spinup=False):
     '''
     Function that bins date_results (dates for which results are written) into bins defined by date_restarts
     Each bin end correspons to the next bin start (date_results_binned[0][-1] == date_results_binned[1][0])
@@ -24,6 +24,12 @@ def bin_dates_by_restart_dates(date_results,date_restarts):
             date_new_bin = date_restarts[c+1]
             date_results_binned.append([])
         date_results_binned[c].append(date_)    
+   
+    if spinup:
+        assert date_end == date_results[-1], 'Choose an output frequency that fits n (integer) times inside of the restart frequency, e.g. 1 year sim with restart "AS" and output "MS". %s' % date_results
+        assert len(date_results_binned) == 1
+        date_results_binned = [date_results_binned[0]]*spinup
+
     return date_results_binned
 
 def copy_binaries(dir_binaries,dir_run):
@@ -182,36 +188,70 @@ def wait_for_run(dir_run,settings_sbatch):
         print('Still running...')
         time.sleep(settings_sbatch['sbatch_check_sec'])
         
-        
-        
-date_start = datetime(2010,1,1,12,0,0)
-date_end = datetime(2020,12,31,12,0,0)
+def move_and_link(to_link,folder_store):
+    try:
+        # move file to folder_store, and keep a symbolic link
+        if type(to_link)==list:
+            for file in to_link:
+                if not os.path.islink(file):
+                    shutil.move( file, folder_store)
 
-freq_restart = 'MS'#'7d'#'AS' # AS = annual, start of year (see pandas date_range freq options)
-freq_output = '7d'#'1d'#'7d' # see pandas date_range freq options
+                    # link files to rundir
+                    file_ln = os.path.join(folder_store,os.path.basename(file) )
+                    os.symlink(file_ln, os.path.join(dir_run, os.path.basename(file)) )
+
+        elif type(to_link)==str: # in this case 'to_link' is a single file or a folder
+            if not os.path.islink(to_link):
+                shutil.move( to_link, folder_store)
+                print('File/dir moved to storage: %s' % folder_store)
+                      
+                # link files/folder back into the rundir
+                file_ln = os.path.join(folder_store,os.path.basename(to_link) )
+                print('Linking file/dir to %s' % file_ln)
+                if os.path.isdir(to_link): #when it is a dir, simply link it back
+                    print('Moving complete dir to storage & linking...')
+                    os.symlink(file_ln, to_link )    
+                else: #when they are files, link them back to the run directory
+                    print('Moving single file to storage & linking...')
+                    os.symlink(file_ln, os.path.join(dir_run, os.path.basename(to_link)) )        
+        else:
+            raise RuntimeError
+    except:
+        print('File copying to %s failed, continuing run...' % folder_store)
+        
+        
+date_start = datetime(2009,1,1,12,0,0)
+date_end = datetime(2010,1,1,12,0,0)
+# date_start = datetime(2010,1,7,12,0,0)
+# date_end = datetime(2011,1,11,12,0,0)
+
+freq_restart = 'AS'#'7d'#'AS','MS' # AS = annual, start of year (see pandas date_range freq options)
+freq_output = 'MS'#'1d'#'7d' # see pandas date_range freq options
 time_couple = timedelta(seconds=900) # coupling, don't change this - or check coup_oas.tcl carefully (e.g. baseunit) - pfl units are in hours
-nx = 444
-ny = 432
+nx = 111 #111,222,444
+ny = 108 #108,216,432
 
-dir_forcing = '/p/scratch/cjibg36/kaandorp2/data/ERA5_EUR-11_CLM' #folder containing CLM forcing files
+dir_forcing = '/p/scratch/cjibg36/kaandorp2/data/ERA5_EUR-44_CLM' #folder containing CLM forcing files
 
-dir_setup = '/p/project/cjibg36/kaandorp2/TSMP_patched/tsmp_cordex_%ix%i' % (nx,ny) #folder in which the case will be run
+dir_setup = '/p/project/cjibg36/kaandorp2/TSMP_patched/tsmp_cordex_spinup_%ix%i' % (nx,ny) #folder in which the case will be run
 dir_build = '/p/project/cjibg36/kaandorp2/TSMP_patched/' #required for parflow files
 dir_binaries = '/p/project/cjibg36/kaandorp2/TSMP_patched/bin/JUWELS_3.1.0MCT_clm-pfl' #folder from which parflow/clm binaries are to be copied
-dir_store = '/p/scratch/cjibg36/kaandorp2/TSMP_results/TSMP_patched/tsmp_cordex_%ix%i' % (nx,ny) #files are moved here after the run is finished
+dir_store = '/p/scratch/cjibg36/kaandorp2/TSMP_results/TSMP_patched/tsmp_cordex_spinup_%ix%i' % (nx,ny) #files are moved here after the run is finished
 dir_template = '/p/project/cjibg36/kaandorp2/TSMP_setups/setup_tsmp_cordex_%ix%i/' % (nx,ny) #only necessary for a new run
 
 date_restarts = pd.date_range(date_start,date_end,freq=freq_restart) #Restart annualy at the start of the year
 date_results = pd.date_range(date_start,date_end,freq=freq_output) #output is written every 7 days
 
+spinup = 10 # integer or set to False
 init_restart = False #initial restart files are available?
-time_dump = date_results[1]-date_results[0]
+IC_file_CLM = '/p/project/cjibg36/kaandorp2/TSMP_patched/tsmp_cordex_111x108/run_20100101-20110107/clm.clm2.r.2011-01-07-43200.nc'
+IC_file_ParFlow = '/p/project/cjibg36/kaandorp2/TSMP_patched/tsmp_cordex_111x108/run_20100101-20110107/cordex111x108_20100101-20110107.out.00053.nc'
 
 #---Some options for n_nodes(n_cores)=1(48),2(96),3(144),4(192),6(288)
-n_proc_pfl_x = 15 #6,9,11,12,15
-n_proc_pfl_y = 15 #6,9,11,12,15
+n_proc_pfl_x = 11 #6,9,11,12,15
+n_proc_pfl_y = 11 #6,9,11,12,15
 n_proc_pfl_z = 1
-n_proc_clm = 63 #12,15,23,48,63
+n_proc_clm = 23 #12,15,23,48,63
 sbatch_account = 'jibg36'
 sbatch_partition = 'batch' #batch
 sbatch_time = '1-00:00:00' #1-00:00:00 
@@ -221,6 +261,7 @@ sbatch_check_sec = 60*5 #check every n seconds if the simulation is done
 x_tot = 5550000
 y_tot = 5400000
 
+time_dump = date_results[1]-date_results[0]
 
 settings_clm = {'t_dump':time_dump,
                 't_couple':time_couple,
@@ -245,7 +286,7 @@ settings_sbatch = {'sbatch_account':sbatch_account,
                   'sbatch_check_sec':sbatch_check_sec}               
 
 # Create a list which contains for every restart time period (e.g. 1 year) all dates for which output is written (i.e. that can be used for restart runs)
-date_results_binned = bin_dates_by_restart_dates(date_results,date_restarts)
+date_results_binned = bin_dates_by_restart_dates(date_results,date_restarts,spinup=spinup)
 
     
 '''
@@ -263,7 +304,7 @@ os.chdir(dir_setup)
  2) Loop through the restart dates, if the folder does not exist create and setup run
 
 '''
-for i1,date_list in enumerate(date_results_binned[0:10]):
+for i1,date_list in enumerate(date_results_binned):
     
     if i1==0 and not init_restart:
         flag_restart = False
@@ -272,11 +313,12 @@ for i1,date_list in enumerate(date_results_binned[0:10]):
         settings_pfl['geom_icpres_valorfile'] = 'Value'
         settings_pfl['geom_icpres_val'] = '-0.2'
     elif i1 ==0 and init_restart: #provide a IC file from another run
+        print('Restarting run from %s and %s' % (IC_file_CLM,IC_file_ParFlow) )
         flag_restart = True
-        settings_clm['file_restart'] = '' #TODO
+        settings_clm['file_restart'] = '%s'%IC_file_CLM #TODO
         settings_pfl['icpres_type'] = 'NCFile'
         settings_pfl['geom_icpres_valorfile'] = 'FileName'
-        settings_pfl['geom_icpres_val'] = '"ICPressureFile.nc"' #TODO
+        settings_pfl['geom_icpres_val'] = '"%s"'%IC_file_ParFlow #TODO
     else: #base the initial conditions on restart file from previous date
         flag_restart = True
         date_list_prev = date_results_binned[i1-1]
@@ -284,7 +326,11 @@ for i1,date_list in enumerate(date_results_binned[0:10]):
         date_start_prev = date_list_prev[0]
         date_end_prev = date_list_prev[-1]
         str_date_prev = str(date_start_prev.date()).replace('-','') + '-' + str(date_end_prev.date()).replace('-','')
-        dir_run_prev = os.path.join(dir_setup,'run_%s' % str_date_prev )
+        if spinup:
+            str_spinup_prev = '%3.3i_' % (i1-1)
+        else:
+            str_spinup_prev = ''
+        dir_run_prev = os.path.join(dir_setup,'run_%s%s' % (str_spinup_prev,str_date_prev) )
     
         files_clm_prev = sorted(glob(os.path.join(dir_run_prev,'clm.clm2.r.*.nc') ))
         assert len(files_clm_prev) == (len(date_list_prev)-1), 'Check if previous run crashed, available CLM restart files: %s' % files_clm_prev
@@ -298,7 +344,13 @@ for i1,date_list in enumerate(date_results_binned[0:10]):
     date_end_sim = date_list[-1]
 
     str_date = str(date_start_sim.date()).replace('-','') + '-' + str(date_end_sim.date()).replace('-','')
-    dir_run = os.path.join(dir_setup,'run_%s' % str_date )
+    if spinup:
+        assert type(spinup) == int, 'Spinup needs to be False or an integer' 
+        print('Running in spinup mode! Repeating %i times' % spinup)
+        str_spinup = '%3.3i_' % i1
+    else:
+        str_spinup = ''
+    dir_run = os.path.join(dir_setup,'run_%s%s' % (str_spinup,str_date) )
     if not os.path.exists(dir_run):
         print('Preparing simulation in %s' % dir_run )
         os.mkdir(dir_run)
@@ -324,6 +376,21 @@ for i1,date_list in enumerate(date_results_binned[0:10]):
         wait_for_run(dir_run,settings_sbatch)
         os.chdir(dir_setup)
         
+        # dir_store_run = os.path.join(dir_store,os.path.basename(dir_run))
+        # files_out_pfl = sorted(glob(os.path.join(dir_run,'cordex%ix%i*.out.*.nc' % (nx,ny))))
+        # files_out_clm = sorted(glob(os.path.join(dir_run,'clm.clm2.*')))
+        # if not os.path.exists(dir_store_run):
+        #     print('Creating dir: %s' % dir_store_run)
+        #     os.makedirs(dir_store_run)
+        if not os.path.exists(dir_store):
+            print('Creating dir: %s' % dir_store)
+            os.makedirs(dir_store)
+        print('Moving files to storage: %s' % dir_store)
+        move_and_link(dir_run,dir_store)
+        
+        # move_and_link(files_out_clm,dir_store_run)
+
+            
     else:
         print('%s exists, continuing...' % dir_run) 
     
