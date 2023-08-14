@@ -29,11 +29,11 @@ def bin_dates_by_restart_dates(date_results,date_restarts,spinup=False):
 '''
 ### USER INPUT ###
 '''     
-date_start = datetime(2019,1,1,12,0,0)
-date_end = datetime(2019,2,1,12,0,0)
+date_start = datetime(2019,4,1,12,0,0)
+date_end = datetime(2019,6,1,12,0,0)
 freq_output = '3d' 
-freq_iter = 'MS'
-freq_restart = 'MS' #e.g. '7d','AS','MS' # AS = annual, start of year (see pandas date_range freq options)
+freq_iter = '2MS'
+freq_restart = '2MS' #e.g. '7d','AS','MS' # AS = annual, start of year (see pandas date_range freq options)
 
 time_couple = timedelta(seconds=900) # coupling, don't change this - or check coup_oas.tcl carefully (e.g. baseunit) - pfl units are in hours
 nx = 111 #111,222,444
@@ -48,8 +48,8 @@ settings_run={'dir_forcing':'/p/scratch/cjibg36/kaandorp2/data/ERA5_EUR-44_CLM',
             'spinup':False, # integer (how many times to repeat the interval from date_start to date_end) or set to False
             'init_restart':True} #Set to true if you have initial restart files available for CLM/PFL, and set them correctly in the 2 lines below
 
-IC_file_CLM = '/p/scratch/cjibg36/kaandorp2/TSMP_results/TSMP_patched/tsmp_cordex_spinup_111x108/run_009_20090101-20100101/clm.clm2.r.2010-01-01-43200.nc'
-IC_file_ParFlow = '/p/scratch/cjibg36/kaandorp2/TSMP_results/TSMP_patched/tsmp_cordex_spinup_111x108/run_009_20090101-20100101/cordex111x108_20090101-20100101.out.00011.nc'
+IC_file_CLM = '/p/scratch/cjibg36/kaandorp2/TSMP_results/TSMP_patched/tsmp_cordex_spinup_111x108/run_009_20090101-20100101/clm.clm2.r.2009-03-04-43200.nc'
+IC_file_ParFlow = '/p/scratch/cjibg36/kaandorp2/TSMP_results/TSMP_patched/tsmp_cordex_spinup_111x108/run_009_20090101-20100101/cordex111x108_20090101-20100101.out.00003.nc'
 
 #---Some options for n_nodes(n_cores)=1(48),2(96),3(144),4(192),6(288)
 n_proc_pfl_x = 6 #6,9,11,12,15
@@ -57,8 +57,8 @@ n_proc_pfl_y = 6 #6,9,11,12,15
 n_proc_pfl_z = 1
 n_proc_clm = 12 #12,15,23,48,63
 sbatch_account = 'jibg36'
-sbatch_partition = 'devel' #batch
-sbatch_time = '0-01:00:00' #1-00:00:00 
+sbatch_partition = 'batch' #batch
+sbatch_time = '0-02:00:00' #1-00:00:00 
 sbatch_check_sec = 60*5 #check every n seconds if the simulation is done
 
 '''
