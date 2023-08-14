@@ -75,11 +75,11 @@ class operator_clm_SMAP:
             y_out = np.append(y_out,val)        
         return y_out
         
-    def get_measurements(self,date_results_iter):
+    def get_measurements(self,date_results_iter,date_DA_start=datetime(1900,1,1),date_DA_end=datetime(2200,1,1)):
         self.lons_out = {}
         self.lats_out = {}
         self.sm_out = {}
-
+        self.file_clm_match = {}
 
         for date_results in date_results_iter:
             for date_ in date_results[1:]:
@@ -90,35 +90,46 @@ class operator_clm_SMAP:
 
                 # 3) for the given model date (date_) get the corresponding SMAP data
                 i_closest = np.argmin(np.abs(pd.to_datetime(dates_SMAP) - date_))
-                assert abs(dates_SMAP[i_closest] - date_) < timedelta(days=1), 'Measurement and model output differ more than a day, TO DO: implement if statement to avoid'
-                file_SMAP = files_SMAP[i_closest]
-                data_SMAP_am, data_SMAP_pm = read_SMAP(file_SMAP)
+                diff_days = abs(dates_SMAP[i_closest] - date_)
+                if diff_days > timedelta(days=1):
+                    print('Measurement and model output differ more than a day, SMAP: %s, TSMP: %s'%(dates_SMAP[i_closest],date_))
+                    # This happens e.g. when not every day has a measurement
+                elif date_ < date_DA_start or date_ > date_DA_end:
+                    print('Skipping %s: outside of range %s-%s'%(str(date_),str(date_DA_start),str(date_DA_end)) )
+                else:
+                    file_SMAP = files_SMAP[i_closest]
+                    data_SMAP_am, data_SMAP_pm = read_SMAP(file_SMAP)
 
-                # 4) select valid datapoints where the soil moisture and location are given
-                mask_data_valid = ~np.isnan(data_SMAP_am.soil_moisture) & ~np.isnan(data_SMAP_am.longitude) 
+                    # 4) select valid datapoints where the soil moisture and location are given
+                    mask_data_valid = ~np.isnan(data_SMAP_am.soil_moisture) & ~np.isnan(data_SMAP_am.longitude) 
 
-                # 5) Select valid points: valid data, and within the given TSMP domain
-                sm = data_SMAP_am.soil_moisture.where(mask_data_valid).values[mask_data_valid]
-                lons = data_SMAP_am.longitude.where(mask_data_valid).values[mask_data_valid]
-                lats = data_SMAP_am.latitude.where(mask_data_valid).values[mask_data_valid]
+                    # 5) Select valid points: valid data, and within the given TSMP domain
+                    sm = data_SMAP_am.soil_moisture.where(mask_data_valid).values[mask_data_valid]
+                    lons = data_SMAP_am.longitude.where(mask_data_valid).values[mask_data_valid]
+                    lats = data_SMAP_am.latitude.where(mask_data_valid).values[mask_data_valid]
 
-                # poor man's check that measurement points are on land and lie within the TSMP domain... There might be a better solution for this (convex hull check on EU-11 polygon?) 
-                mask_SMAP_lsm = griddata((np.concatenate((self.grid_TSMP.lon_centre.values.ravel(),self.grid_TSMP.lon_edges)),np.concatenate((self.grid_TSMP.lat_centre.values.ravel(),self.grid_TSMP.lat_edges))),
-                                         np.concatenate((self.grid_TSMP.lsm.values.ravel(),self.grid_TSMP.lsm_edges)),
-                                         (lons,lats),method='nearest') == 2
+                    # poor man's check that measurement points are on land and lie within the TSMP domain... There might be a better solution for this (convex hull check on EU-11 polygon?) 
+                    mask_SMAP_lsm = griddata((np.concatenate((self.grid_TSMP.lon_centre.values.ravel(),self.grid_TSMP.lon_edges)),np.concatenate((self.grid_TSMP.lat_centre.values.ravel(),self.grid_TSMP.lat_edges))),
+                                             np.concatenate((self.grid_TSMP.lsm.values.ravel(),self.grid_TSMP.lsm_edges)),
+                                             (lons,lats),method='nearest') == 2
 
-                self.lons_out[date_] = lons[mask_SMAP_lsm]
-                self.lats_out[date_] = lats[mask_SMAP_lsm]
-                self.sm_out[date_] = sm[mask_SMAP_lsm]
+                    self.lons_out[date_] = lons[mask_SMAP_lsm]
+                    self.lats_out[date_] = lats[mask_SMAP_lsm]
+                    self.sm_out[date_] = sm[mask_SMAP_lsm]
         return self.flatten_y(self.sm_out)
                 
     def interpolate_model_results(self,i_real,settings_run):
         self.data_TSMP_i = {}
         files_clm = sorted(glob(os.path.join(settings_run['dir_iter'],'R%3.3i/**/clm.clm2.h0.*.nc'%i_real)))
-        assert len(files_clm) == len(self.sm_out.keys()), 'Something might have gone wrong in realization %i: not every date has a matching file'%i_real
+        # assert len(files_clm) == len(self.sm_out.keys()), 'Something might have gone wrong in realization %i: not every date has a matching file'%i_real
 
         for i1,date_ in enumerate(self.sm_out.keys()):
-            file_clm = sorted(glob(os.path.join(settings_run['dir_iter'],'R%3.3i/**/clm.clm2.h0.*.nc'%i_real)))[i1]
+            date_find = str(date_.date())
+            file_matching = [s for s in files_clm if date_find in s]
+            assert len(file_matching)==1, 'This operator only works for one matching model file per date'
+            file_clm = file_matching[0]
+            
+            # file_clm = sorted(glob(os.path.join(settings_run['dir_iter'],'R%3.3i/**/clm.clm2.h0.*.nc'%i_real)))[i1]
             # print(date_,file_clm)
 
             data_TSMP = xr.open_dataset(file_clm)

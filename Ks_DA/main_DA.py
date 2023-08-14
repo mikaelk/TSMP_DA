@@ -1,7 +1,7 @@
 import numpy as np
 import os
 import shutil
-from datetime import datetime
+from datetime import datetime, timedelta
 import pandas as pd
 from glob import glob
 import xarray as xr
@@ -129,12 +129,12 @@ param_names = ['Ks']
 param_length = {}
 
 data_names = ['SMAP']
-data_var = [0.05**2]
+data_var = [0.1**2]
 
 run_parallel = True #run the DA (e.g. creating realizations) in parallel if possible
-n_parallel = 4 # set to n_ensemble+1 for all runs to run simultaneously (member 0 = most likely params)
-n_ensemble = 11
-n_iter = 5
+n_parallel = 12 # set to n_ensemble+1 for all runs to run simultaneously (member 0 = most likely params)
+n_ensemble = 35
+n_iter = 4
 nx = 111 #111,222,444
 ny = 108 #108,216,432
 
@@ -157,6 +157,8 @@ settings_DA = {'file_lsm':'/p/project/cjibg36/kaandorp2/TSMP_setups/static/EUR-1
 
 if n_iter > 1:
     alpha = n_iter*np.ones(n_iter)
+elif n_iter == 8:
+    alpha = np.array([20.719,19.0,17.,16.,15.,9.,5.,2.5])    
 else:
     alpha = [1.]
         
@@ -202,6 +204,8 @@ if not os.path.exists(dir_date):
     print('Creating folder for dates %s: %s' % (str_date,dir_date) )
     os.mkdir(dir_date)
     
+## TEMP
+date_DA_start = date_start_sim + timedelta(days=30) # 30 day spinup
     
 mismatch_iter = [0]
 #%% ----------- iteration loop -----------    
@@ -250,10 +254,11 @@ for i_iter in np.arange(n_iter):
         # i.e. get the TSMP values at the SMAP times/locations
         operator = operator_clm_SMAP(settings_DA['file_lsm'],settings_DA['file_corner'],settings_DA['folder_SMAP'])
         # 1) get the observed quantities, and corresponding lon/lat/time    
-        data_measured = operator.get_measurements(date_results_iter)
+        data_measured = operator.get_measurements(date_results_iter,date_DA_start=date_DA_start)
 
         ### TEMPORARY: reduce number of measurements
-        frac_select = .01
+        n_select = 20000
+        frac_select = min((n_select / len(data_measured)),.99)
         mask_measured = np.random.choice([0,1],size=len(data_measured),p=[1-frac_select,frac_select]).astype(bool) 
         data_measured=data_measured[mask_measured]
 
@@ -309,12 +314,12 @@ for i_iter in np.arange(n_iter):
         mismatch_iter.append(mean_mismatch_new)
         print('Mismatch: %3.3f -> %3.3f' % (mismatch_iter[-2],mismatch_iter[-1]))
 
-        file_clm_last = sorted(glob(os.path.join(settings_run['dir_iter'],'R000/**/clm.clm2.h0*')))[-1]
-        file_pfl_last = sorted(glob(os.path.join(settings_run['dir_iter'],'R000/**/*.out.*.nc')))[-1]
+#         file_clm_last = sorted(glob(os.path.join(settings_run['dir_iter'],'R000/**/clm.clm2.r*')))[-1]
+#         file_pfl_last = sorted(glob(os.path.join(settings_run['dir_iter'],'R000/**/*.out.*.nc')))[-1]
 
-        settings_pfl.update({'IC_file':file_pfl_last})
-        settings_clm.update({'IC_file':file_clm_last})
+#         settings_pfl.update({'IC_file':file_pfl_last})
+#         settings_clm.update({'IC_file':file_clm_last})
         
-        print('Resuming next iteration from CLM file %s' % file_clm_last)
-        print('Resuming next iteration from PFL file %s' % file_pfl_last)
+#         print('Resuming next iteration from CLM file %s' % file_clm_last)
+#         print('Resuming next iteration from PFL file %s' % file_pfl_last)
         
