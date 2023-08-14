@@ -53,7 +53,8 @@ def generate_Ks(i_real,settings_gen,settings_run):
     Y_train = np.load(os.path.join(dir_in,'Ks.param.%3.3i.%3.3i.%3.3i.npy'%(settings_gen['i_date'],settings_gen['i_iter'],i_real) ))
     # Y_sigma = np.load(os.path.join(dir_in,'Ks.param.%3.3i.%3.3i.000.npy'%(settings_gen['i_date'],settings_gen['i_iter']) ))[:,1]
         
-    kernel = 1.0 * Matern(length_scale=20,nu=1.5,length_scale_bounds='fixed')
+    # kernel = 1.0 * Matern(length_scale=20,nu=1.5,length_scale_bounds='fixed')
+    kernel = 1.0 * Matern(length_scale=20,nu=1.5)
 
     data_indi = readSa(file_indi)
     indi_dz = 2*np.array([9.0,7.5,5.0,5.0,2.0,0.5,0.35,0.25,0.15,0.10,0.065,0.035,0.025,0.015,0.01])
