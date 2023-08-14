@@ -211,50 +211,54 @@ def move_and_link(to_link,folder_store):
              
     else:
         raise RuntimeError
-        
-        
-date_start = datetime(2009,1,1,12,0,0)
-date_end = datetime(2010,1,1,12,0,0)
-# date_start = datetime(2010,1,7,12,0,0)
-# date_end = datetime(2011,1,11,12,0,0)
+    
+'''
+### USER INPUT ###
+'''     
+date_start = datetime(2020,1,1,12,0,0)
+date_end = datetime(2021,1,1,12,0,0)
 
-freq_restart = 'AS'#'7d'#'AS','MS' # AS = annual, start of year (see pandas date_range freq options)
-freq_output = 'MS'#'1d'#'7d' # see pandas date_range freq options
+freq_restart = 'MS'#'7d'#'AS','MS' # AS = annual, start of year (see pandas date_range freq options)
+freq_output = '7d'#'1d'#'7d' # see pandas date_range freq options
 time_couple = timedelta(seconds=900) # coupling, don't change this - or check coup_oas.tcl carefully (e.g. baseunit) - pfl units are in hours
 nx = 111 #111,222,444
 ny = 108 #108,216,432
 
 dir_forcing = '/p/scratch/cjibg36/kaandorp2/data/ERA5_EUR-44_CLM' #folder containing CLM forcing files
 
-dir_setup = '/p/project/cjibg36/kaandorp2/TSMP_patched/tsmp_cordex_spinup_%ix%i' % (nx,ny) #folder in which the case will be run
+dir_setup = '/p/project/cjibg36/kaandorp2/TSMP_patched/tsmp_cordex_spinup_m20_%ix%i' % (nx,ny) #folder in which the case will be run
 dir_build = '/p/project/cjibg36/kaandorp2/TSMP_patched/' #required for parflow files
 dir_binaries = '/p/project/cjibg36/kaandorp2/TSMP_patched/bin/JUWELS_3.1.0MCT_clm-pfl' #folder from which parflow/clm binaries are to be copied
-dir_store = '/p/scratch/cjibg36/kaandorp2/TSMP_results/TSMP_patched/tsmp_cordex_spinup_%ix%i' % (nx,ny) #files are moved here after the run is finished
-dir_template = '/p/project/cjibg36/kaandorp2/TSMP_setups/setup_tsmp_cordex_%ix%i/' % (nx,ny) #only necessary for a new run
+dir_store = '/p/scratch/cjibg36/kaandorp2/TSMP_results/TSMP_patched/tsmp_cordex_spinup_m20_%ix%i' % (nx,ny) #files are moved here after the run is finished
+dir_template = '/p/project/cjibg36/kaandorp2/TSMP_setups/setup_tsmp_cordex_%ix%i/' % (nx,ny) #folder containing all clm/pfl/oasis/namelist files, where everything with 2 underscores (__variable__) needs to be filled out 
 
-date_restarts = pd.date_range(date_start,date_end,freq=freq_restart) #Restart annualy at the start of the year
-date_results = pd.date_range(date_start,date_end,freq=freq_output) #output is written every 7 days
-
-spinup = 10 # integer or set to False
-init_restart = False #initial restart files are available?
+spinup = False # integer (how many times to repeat the interval from date_start to date_end) or set to False
+init_restart = False #Set to true if you have initial restart files available for CLM/PFL, and set them correctly in the 2 lines below
 IC_file_CLM = '/p/project/cjibg36/kaandorp2/TSMP_patched/tsmp_cordex_111x108/run_20100101-20110107/clm.clm2.r.2011-01-07-43200.nc'
 IC_file_ParFlow = '/p/project/cjibg36/kaandorp2/TSMP_patched/tsmp_cordex_111x108/run_20100101-20110107/cordex111x108_20100101-20110107.out.00053.nc'
 
 #---Some options for n_nodes(n_cores)=1(48),2(96),3(144),4(192),6(288)
-n_proc_pfl_x = 11 #6,9,11,12,15
-n_proc_pfl_y = 11 #6,9,11,12,15
+n_proc_pfl_x = 9 #6,9,11,12,15
+n_proc_pfl_y = 9 #6,9,11,12,15
 n_proc_pfl_z = 1
-n_proc_clm = 23 #12,15,23,48,63
+n_proc_clm = 15 #12,15,23,48,63
 sbatch_account = 'jibg36'
 sbatch_partition = 'batch' #batch
 sbatch_time = '1-00:00:00' #1-00:00:00 
 sbatch_check_sec = 60*5 #check every n seconds if the simulation is done
 
-# EU-cordex specific: domain extend
+'''
+### END USER INPUT ###
+'''  
+
+# EU-cordex specific: domain dimensions
 x_tot = 5550000
 y_tot = 5400000
 
-time_dump = date_results[1]-date_results[0]
+date_restarts = pd.date_range(date_start,date_end,freq=freq_restart)
+date_results = pd.date_range(date_start,date_end,freq=freq_output)
+
+time_dump = date_results[1]-date_results[0] # Not a perfect solution, can lead to the output frequency being too low (with freq_output='MS' for example)
 
 settings_clm = {'t_dump':time_dump,
                 't_couple':time_couple,
@@ -299,19 +303,19 @@ os.chdir(dir_setup)
 '''
 for i1,date_list in enumerate(date_results_binned):
     
-    if i1==0 and not init_restart:
+    if i1==0 and not init_restart: #'Cold' run
         flag_restart = False
         settings_clm['file_restart'] = ''
         settings_pfl['icpres_type'] = 'HydroStaticPatch'
         settings_pfl['geom_icpres_valorfile'] = 'Value'
-        settings_pfl['geom_icpres_val'] = '-0.2'
+        settings_pfl['geom_icpres_val'] = '-2.0'
     elif i1 ==0 and init_restart: #provide a IC file from another run
         print('Restarting run from %s and %s' % (IC_file_CLM,IC_file_ParFlow) )
         flag_restart = True
         settings_clm['file_restart'] = '%s'%IC_file_CLM #TODO
         settings_pfl['icpres_type'] = 'NCFile'
         settings_pfl['geom_icpres_valorfile'] = 'FileName'
-        settings_pfl['geom_icpres_val'] = '"%s"'%IC_file_ParFlow #TODO
+        settings_pfl['geom_icpres_val'] = '"%s"'%IC_file_ParFlow 
     else: #base the initial conditions on restart file from previous date
         flag_restart = True
         date_list_prev = date_results_binned[i1-1]
@@ -336,6 +340,7 @@ for i1,date_list in enumerate(date_results_binned):
     date_start_sim = date_list[0]
     date_end_sim = date_list[-1]
 
+    ## Define the run directory, as 'run_{start_date}-{end_date}', or 'run_{integer}_{start_date}-{end_date}' in the case of a spinup with the same dates repeated
     str_date = str(date_start_sim.date()).replace('-','') + '-' + str(date_end_sim.date()).replace('-','')
     if spinup:
         assert type(spinup) == int, 'Spinup needs to be False or an integer' 
@@ -344,6 +349,8 @@ for i1,date_list in enumerate(date_results_binned):
     else:
         str_spinup = ''
     dir_run = os.path.join(dir_setup,'run_%s%s' % (str_spinup,str_date) )
+    
+    ## Main loop: if the given run directory does not exist prepare and submit the run
     if not os.path.exists(dir_run):
         print('Preparing simulation in %s' % dir_run )
         os.mkdir(dir_run)
@@ -366,9 +373,11 @@ for i1,date_list in enumerate(date_results_binned):
     
         os.chdir(dir_run)
         start_run(dir_run)
-        wait_for_run(dir_run,settings_sbatch)
+        ## in tsmp_slm_run.bsh, a file ready.txt is written at the end of the run: wait for this file
+        wait_for_run(dir_run,settings_sbatch) 
         os.chdir(dir_setup)
         
+        ## Last step: move the run directory to storage (scratch), and keep a link
         if not os.path.exists(dir_store):
             print('Creating dir: %s' % dir_store)
             os.makedirs(dir_store)
