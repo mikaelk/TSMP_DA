@@ -129,7 +129,7 @@ param_names = ['Ks']
 param_length = {}
 
 data_names = ['SMAP']
-data_var = [0.1**2]
+data_var = [0.05**2]
 
 run_parallel = True #run the DA (e.g. creating realizations) in parallel if possible
 n_parallel = 12 # set to n_ensemble+1 for all runs to run simultaneously (member 0 = most likely params)
@@ -145,8 +145,8 @@ file_indi = os.path.join(dir_template,'input_pf/EUR-11_TSMP_FZJ-IBG3_CLMPFLDomai
 
 # settings required for the functions in setup_parameters and generate_parameters
 settings_gen = {'file_indi':file_indi,
-                'Ks_sample_xy': 5,
-                'Ks_sample_z': 3,
+                'Ks_sample_xy': 15,
+                'Ks_sample_z': 5,
                'Ks_mode':'ml',
                'Ks_plot':True,}
 
@@ -205,7 +205,7 @@ if not os.path.exists(dir_date):
     os.mkdir(dir_date)
     
 ## TEMP
-date_DA_start = date_start_sim + timedelta(days=30) # 30 day spinup
+date_DA_start = date_start_sim + timedelta(days=60) # 60 day spinup
     
 mismatch_iter = [0]
 #%% ----------- iteration loop -----------    
