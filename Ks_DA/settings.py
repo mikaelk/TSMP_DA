@@ -29,27 +29,27 @@ def bin_dates_by_restart_dates(date_results,date_restarts,spinup=False):
 '''
 ### USER INPUT ###
 '''     
-date_start = datetime(2019,3,1,12,0,0)
-date_end = datetime(2019,6,1,12,0,0)
-freq_output = '3d' 
-freq_iter = '3MS'
-freq_restart = '3MS' #e.g. '7d','AS','MS' # AS = annual, start of year (see pandas date_range freq options)
+date_start = datetime(2019,1,1,12,0,0)
+date_end = datetime(2020,1,1,12,0,0)
+freq_output = 'MS'#'3d' 
+freq_iter = 'AS'#'3MS'
+freq_restart = 'AS'#'3MS' #e.g. '7d','AS','MS' # AS = annual, start of year (see pandas date_range freq options)
 
 time_couple = timedelta(seconds=900) # coupling, don't change this - or check coup_oas.tcl carefully (e.g. baseunit) - pfl units are in hours
 nx = 111 #111,222,444
 ny = 108 #108,216,432
 
 settings_run={'dir_forcing':'/p/scratch/cjibg36/kaandorp2/data/ERA5_EUR-44_CLM', #folder containing CLM forcing files
-            'dir_setup':'/p/scratch/cjibg36/kaandorp2/TSMP_results/TSMP_patched/DA_tsmp_cordex_%ix%i' % (nx,ny), #folder in which the case will be run
+            'dir_setup':'/p/scratch/cjibg36/kaandorp2/TSMP_results/TSMP_patched/tsmp_cordex_%ix%i_spinup_KsStd' % (nx,ny), #folder in which the case will be run
             'dir_build':'/p/project/cjibg36/kaandorp2/TSMP_patched/', #required for parflow files
             'dir_binaries':'/p/project/cjibg36/kaandorp2/TSMP_patched/bin/JUWELS_3.1.0MCT_clm-pfl', #folder from which parflow/clm binaries are to be copied
             'dir_store':None, #files are moved here after the run is finished
-            'dir_template':'/p/project/cjibg36/kaandorp2/TSMP_setups/setup_DA_tsmp_cordex_%ix%i/' % (nx,ny), #folder containing all clm/pfl/oasis/namelist files, where everything with 2 underscores (__variable__) needs to be filled out 
-            'spinup':False, # integer (how many times to repeat the interval from date_start to date_end) or set to False
+            'dir_template':'/p/project/cjibg36/kaandorp2/TSMP_setups/setup_tsmp_cordex_%ix%i_KsStd/' % (nx,ny), #folder containing all clm/pfl/oasis/namelist files, where everything with 2 underscores (__variable__) needs to be filled out 
+            'spinup':10, # integer (how many times to repeat the interval from date_start to date_end) or set to False
             'init_restart':True} #Set to true if you have initial restart files available for CLM/PFL, and set them correctly in the 2 lines below
 
-IC_file_CLM = '/p/scratch/cjibg36/kaandorp2/TSMP_results/TSMP_patched/tsmp_cordex_111x108/run_20190104-20201225/clm.clm2.r.2019-03-01-43200.nc'
-IC_file_ParFlow = '/p/scratch/cjibg36/kaandorp2/TSMP_results/TSMP_patched/tsmp_cordex_111x108/run_20190104-20201225/cordex111x108_20190104-20201225.out.00007.nc'
+IC_file_CLM = '/p/scratch/cjibg36/kaandorp2/TSMP_results/TSMP_patched/tsmp_cordex_111x108/run_20180105-20190104/clm.clm2.r.2019-01-04-43200.nc'
+IC_file_ParFlow = '/p/scratch/cjibg36/kaandorp2/TSMP_results/TSMP_patched/tsmp_cordex_111x108/run_20180105-20190104/cordex111x108_20180105-20190104.out.00052.nc'
 
 #---Some options for n_nodes(n_cores)=1(48),2(96),3(144),4(192),6(288)
 n_proc_pfl_x = 6 #6,9,11,12,15
@@ -58,7 +58,7 @@ n_proc_pfl_z = 1
 n_proc_clm = 12 #12,15,23,48,63
 sbatch_account = 'jibg36'
 sbatch_partition = 'batch' #batch
-sbatch_time = '0-02:00:00' #1-00:00:00 
+sbatch_time = '1-00:00:00' #1-00:00:00 
 sbatch_check_sec = 60*5 #check every n seconds if the simulation is done
 
 '''
@@ -77,8 +77,8 @@ date_results = pd.date_range(date_start,date_end,freq=freq_output)
 # 1) the time span (date_start to date_end) is separated into iteration time windows: e.g. we can run a smoother that repeats 1 year simulations a bunch of times over a decade (date_iterations)
 # 2) each iteration can be subdivided into several restarts: e.g. divide 1-year simulations into 1-month batches for high res runs (date_restarts)
 # 3) output is written at a frequency of 'freq_output' (date_results)
-date_iter_binned = bin_dates_by_restart_dates(date_results,date_iterations)
-date_restarts_binned = bin_dates_by_restart_dates(date_restarts,date_iterations)
+date_iter_binned = bin_dates_by_restart_dates(date_results,date_iterations,spinup=settings_run['spinup'])
+date_restarts_binned = bin_dates_by_restart_dates(date_restarts,date_iterations,spinup=settings_run['spinup'])
 date_results_binned = [bin_dates_by_restart_dates(date_iter_binned[i1],date_restarts_binned[i1]) for i1 in range(len(date_iter_binned))] 
 
 time_dump = date_results[1]-date_results[0] # Not a perfect solution, can lead to the output frequency being too low (with freq_output='MS' for example)

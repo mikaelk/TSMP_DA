@@ -90,7 +90,7 @@ def write_parameters(parameters,settings_gen,settings_run):
         np.save(os.path.join(dir_DA,'%s.param.%3.3i.%3.3i.%3.3i'%(p_name,settings_gen['i_date'],settings_gen['i_iter']+1,0)),param_)
         i_start = i_end   
         
-def plot_results(operator,settings_gen,settings_run):
+def plot_results_ml(operator,settings_gen,settings_run):
 
     for date_ in operator.data_TSMP_ml.keys():
 
@@ -171,7 +171,12 @@ if not os.path.exists(dir_setup):
 else:
     print('Continuing simulation in %s' % dir_setup)
 # os.chdir(dir_setup)
-    
+   
+# copy settings file for later use
+dir_settings = os.path.join(settings_run['dir_setup'],'settings')
+if not os.path.exists(dir_settings):
+    os.mkdir(dir_settings)
+shutil.copy('settings.py',dir_settings)
     
 dir_figs = os.path.join(dir_setup,'figures')
 settings_run['dir_figs'] = dir_figs
@@ -271,7 +276,7 @@ for i_iter in np.arange(n_iter):
             data_f[:,i_real-1] = operator.interpolate_model_results(i_real,settings_run)[mask_measured]
         # get most likely parameter output as well, to track if the iterations are improving
         data_ml = operator.interpolate_model_results(0,settings_run)[mask_measured]
-        plot_results(operator,settings_gen,settings_run)
+        plot_results_ml(operator,settings_gen,settings_run)
             
             
         # 3) construct covariance matrices based on ensemble of parameters and results (data)

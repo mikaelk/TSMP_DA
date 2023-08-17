@@ -201,14 +201,15 @@ def move_and_link(to_link,folder_store,delete_existing=True):
 def remove_misc_files(dir_run):
     # [os.remove(file) for file in glob(os.path.join(dir_run,'CLMSAT*.nc'))]
     # Keep all output files
-    retain = ['mpiMPMD*','cordex*.out.0*','clm.clm2.h0*.nc']
+    retain = ['mpiMPMD*','cordex*.out.0*','clm.clm2.h0*.nc','clm.clm2.r*.nc','coup_oas*','lnd*']
     files_retain = []
     for retain_ in retain:
         files_retain.extend(glob(os.path.join(dir_run,retain_)))
 
     # Keep the last CLM restart file
-    files_retain.append(sorted(glob(os.path.join(dir_run,'clm.clm2.r*.nc')))[-1])
-
+    # files_retain.append(sorted(glob(os.path.join(dir_run,'clm.clm2.r*.nc')))[-1])
+    # files_retain.append(sorted(glob(os.path.join(dir_run,'clm.clm2.r*.nc'))) )
+    
     # Check for all files if necessary to retain, if not delete
     files = os.listdir(dir_run)
     for file_ in files:
@@ -249,14 +250,19 @@ def setup_submit_wait(i_real,settings_run,settings_clm,settings_pfl,settings_sba
                 str_spinup_prev = ''
             dir_run_prev = os.path.join(dir_real,'run_%s%s' % (str_spinup_prev,str_date_prev) )
 
-            files_clm_prev = sorted(glob(os.path.join(dir_run_prev,'clm.clm2.r.*.nc') ))
-            assert len(files_clm_prev) == (len(date_list_prev)-1), 'Check if previous run crashed, available CLM restart files: %s' % files_clm_prev
+            files_clm_restart = sorted(glob(os.path.join(dir_run_prev,'clm.clm2.r.*.nc') ))
+            # if settings_run['spinup']:
+            assert str(date_end_prev.date()) in files_clm_restart[-1], 'Check if previous run crashed, last date: %s, restart file: %s'%(str(date_end_prev.date()),files_clm_restart[-1])
+            
+            # files_clm_prev = sorted(glob(os.path.join(dir_run_prev,'clm.clm2.h0.*.nc') ))            
+            # assert len(files_clm_prev) == (len(date_list_prev)-1), 'Check if previous run crashed, available CLM output files: %s, previous dates: %s' % (files_clm_prev, date_list_prev)
             settings_pfl['icpres_type'] = 'NCFile'
             settings_pfl['geom_icpres_valorfile'] = 'FileName'    
-            settings_clm['file_restart'] = files_clm_prev[-1]
+            settings_clm['file_restart'] = files_clm_restart[-1]
             settings_pfl['geom_icpres_val'] = sorted(glob(os.path.join(dir_run_prev,
                                                                        'cordex%ix%i_%s.out.0*' % (settings_pfl['nx'],settings_pfl['ny'],str_date_prev))))[-1]
-
+            print('Restarting CLM from %s' % files_clm_restart[-1])
+            
 
         date_start_sim = date_list[0]
         date_end_sim = date_list[-1]
@@ -300,7 +306,7 @@ def setup_submit_wait(i_real,settings_run,settings_clm,settings_pfl,settings_sba
             wait_for_run(dir_run,settings_sbatch) 
             os.chdir(settings_run['dir_setup'])
           
-            # remove_misc_files(dir_run)
+            remove_misc_files(dir_run)
 
             # ## Last step: move the run directory to storage (scratch), and keep a link
             # if not os.path.exists(settings_run['dir_store']):

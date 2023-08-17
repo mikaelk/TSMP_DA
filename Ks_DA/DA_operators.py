@@ -131,7 +131,7 @@ class operator_clm_SMAP:
             
             # file_clm = sorted(glob(os.path.join(settings_run['dir_iter'],'R%3.3i/**/clm.clm2.h0.*.nc'%i_real)))[i1]
             # print(date_,file_clm)
-
+            
             data_TSMP = xr.open_dataset(file_clm)
             # add curvilinear lon/lat 
             data_TSMP = data_TSMP.assign_coords(lon_c=(('lat','lon'), self.grid_TSMP.lon_centre.values))
