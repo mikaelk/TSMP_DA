@@ -46,9 +46,14 @@ def adjust_clm_files(dir_setup,dir_run,settings_clm):
     os.chmod(os.path.join(dir_run,'lnd.stdin'),0o755) # read/execute permissions for all
 
 def adjust_parflow_files(dir_setup,dir_run,dir_build,dir_bin,dir_real,settings_pfl):
-    for file_ in ['input_pf/ascii2pfb_slopes.tcl','input_pf/ascii2pfb_SoilInd.tcl','input_pf/ascii2pfb_Ks.tcl','namelists/coup_oas.tcl']:
+    files_parflow = [os.path.join(dir_setup,'input_pf/ascii2pfb_slopes.tcl'),
+                     os.path.join(dir_setup,'input_pf/ascii2pfb_SoilInd.tcl'),
+                     os.path.join(dir_setup,'input_pf/ascii2pfb_Ks.tcl'),
+                     os.path.join(dir_real,'coup_oas.tcl')]
+                     
+    for file_ in files_parflow:
 
-        with open( os.path.join(dir_setup,file_) , 'r') as file :
+        with open( file_ , 'r') as file :
           filedata = file.read()
 
         filedata = filedata.replace('__nprocx_pfl_bldsva__', '%i'%settings_pfl['n_proc_pfl_x'])
@@ -171,7 +176,7 @@ def start_run(dir_build):
     
 def wait_for_run(dir_run,settings_sbatch):
     while not os.path.exists(os.path.join(dir_run,'ready.txt')):
-        print('Still running...',flush=True)
+        print('Still running (%s)...'%(dir_run.split(os.path.sep)[-4:-1]),flush=True)
         time.sleep(settings_sbatch['sbatch_check_sec'])
         
 def move_and_link(to_link,folder_store,delete_existing=True):

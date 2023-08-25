@@ -7,9 +7,9 @@ from glob import glob
 import xarray as xr
 import netCDF4
 
-from setup_parameters import setup_Ks
-from generate_parameters import generate_Ks
-from run_realization import setup_submit_wait
+# from setup_parameters import setup_Ks,setup_Ks_tensor,setup_Ks_anom
+# from generate_parameters import generate_Ks,generate_Ks_tensor,generate_Ks_anom
+from run_realization_v2 import setup_submit_wait
 from DA_operators import operator_clm_SMAP
 
 from settings import settings_run,settings_clm,settings_pfl,settings_sbatch,settings_DA,settings_gen,date_results_binned
@@ -21,13 +21,17 @@ from scipy import sparse
 import matplotlib.pyplot as plt
 from scipy.stats import pearsonr
 
+'''
+v2: test adjusting Ks tensor value
+'''
+
 def realize_parameters(i_real,settings_gen,settings_run,init=True):
-    print('Creating parameter realizations for ensemble member %i' % i_real)
     dir_real = os.path.join(settings_run['dir_iter'],'R%3.3i'%i_real)
     local_state = np.random.RandomState() #required for parallel processes in python
     dir_DA = settings_run['dir_DA']
 
     if not os.path.exists(dir_real):
+        print('Creating parameter realizations for ensemble member %i' % i_real)
         print('Creating folder for realization %i: %s' % (i_real,dir_real), flush=True )
         os.mkdir(dir_real)
 
@@ -91,7 +95,7 @@ def write_parameters(parameters,settings_gen,settings_run):
         np.save(os.path.join(dir_DA,'%s.param.%3.3i.%3.3i.%3.3i'%(p_name,settings_gen['i_date'],settings_gen['i_iter']+1,0)),param_)
         i_start = i_end   
         
-    
+        
 def plot_results_ml(operator,settings_gen,settings_run):
 
     for date_ in operator.data_TSMP_ml.keys():
@@ -112,14 +116,16 @@ def plot_results_ml(operator,settings_gen,settings_run):
         plt.figure()
         plt.pcolormesh(operator.grid_TSMP['lon_corner'],operator.grid_TSMP['lat_corner'],operator.grid_TSMP['lsm']==2,cmap=plt.cm.Greys,vmax=2 )
         diff = operator.sm_out[date_] - operator.data_TSMP_ml[date_]
-        diff_max = max(np.abs(diff))
+        # diff_max = max(np.abs(diff))
+        diff_max = 0.4
         plt.scatter(operator.lons_out[date_],operator.lats_out[date_],s=10,c=diff,vmin=-diff_max,vmax=diff_max,cmap=plt.cm.bwr)
-        cbar = plt.colorbar()
+        cbar = plt.colorbar(extend='both')
         cbar.set_label('SMAP - TSMP (mean param. values)')
         plt.savefig(os.path.join(settings_run['dir_figs'],'mismatch_%s_%3.3i.png'%(str_date,settings_gen['i_iter']) ) )
   
+        plt.close('all')
         
-        
+
 data_names = ['SMAP']
 data_var = [0.1**2]
 
@@ -178,11 +184,11 @@ if not os.path.exists(dir_DA):
     # setup parameters: prior/uncertainties, + static properties based on the settings if necessary
     for fn in param_setup:
         fn(settings_gen,settings_run)
-
+        
 # Read parameter length and put in dictionary here
 for param_ in param_names:
     settings_gen['param_length'][param_] = np.load(os.path.join(dir_DA,'%s.param.000.000.prior.npy' % param_) ).shape[0]
-        
+    
 #%% ----------- DA loop -----------
    
     
@@ -199,7 +205,7 @@ if not os.path.exists(dir_date):
     os.mkdir(dir_date)
     
 ## TEMP
-date_DA_start = date_start_sim + timedelta(days=60) # 60 day spinup
+date_DA_start = date_end_sim - timedelta(days=30) # spinup, only assimilate last 30 days
     
 mismatch_iter = [0]
 #%% ----------- iteration loop -----------    
@@ -213,13 +219,12 @@ for i_iter in np.arange(n_iter):
         init = False
     str_iter = 'i%3.3i' % i_iter
     dir_iter = os.path.join(dir_date,str_iter)
-    if os.path.exists(os.path.join(dir_DA,'%s.param.000.%3.3i.000.npy'%(param_names[0],i_iter+1)) ):
-        print('Iteration %i finished succesfully, continuing with the next iteration...' % i_iter)
+    if os.path.exists(os.path.join(dir_DA,'%s.param.000.%3.3i.000.npy'%(param_names[0],i_iter+1)) ): #check if the next iteration parameter files already exist
+        print('Iteration %i seems to have finished succesfully, continuing with the next iteration...' % i_iter)
     else:
         if not os.path.exists(dir_iter):
             print('Creating folder for iteration %i: %s' % (i_iter,dir_iter) )
             os.mkdir(dir_iter)
-
 
         #%% ----------- ensemble member loop (parallel) -----------    
         # ensemble member (realization) loop, done in parallel
@@ -232,7 +237,7 @@ for i_iter in np.arange(n_iter):
         settings_gen['param_names'] = param_names
         # settings_gen['param_length'] = param_length
         
-        with Pool(processes=n_parallel) as pool:
+        with Pool(processes=n_parallel_setup) as pool:
             pool.starmap(realize_parameters, zip(np.arange(0,n_ensemble+1),repeat(settings_gen),repeat(settings_run),repeat(init)) )
 
 

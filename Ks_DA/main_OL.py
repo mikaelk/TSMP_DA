@@ -18,7 +18,7 @@ else:
 dir_settings = os.path.join(settings_run['dir_setup'],'settings')
 if not os.path.exists(dir_settings):
     os.mkdir(dir_settings)
-shutil.copy('settings.py',dir_settings)
+    shutil.copy('settings.py',dir_settings)
 
 settings_run['dir_iter'] = settings_run['dir_setup']
 
