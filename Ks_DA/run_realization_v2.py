@@ -10,7 +10,8 @@ from glob import glob
 from settings import settings_run,settings_clm,settings_pfl,settings_sbatch, date_results_binned
 
 '''
-v2: test adjusting Ks tensor value
+v2:   test adjusting Ks tensor value
+v2.1: porosity option added
 '''
 
 def copy_binaries(dir_binaries,dir_run):
@@ -48,9 +49,34 @@ def adjust_clm_files(dir_setup,dir_run,settings_clm):
 def adjust_parflow_files(dir_setup,dir_run,dir_build,dir_bin,dir_real,settings_pfl):
     files_parflow = [os.path.join(dir_setup,'input_pf/ascii2pfb_slopes.tcl'),
                      os.path.join(dir_setup,'input_pf/ascii2pfb_SoilInd.tcl'),
-                     os.path.join(dir_setup,'input_pf/ascii2pfb_Ks.tcl'),
                      os.path.join(dir_real,'coup_oas.tcl')]
-                     
+       
+    # new setup: remove following lines
+    # if certain parameters are to be estimated, add the corresponding tcl files to the list
+    if 'Ks_anom' in settings_pfl['param_names'] or 'Ks' in settings_pfl['param_names']:
+        files_parflow.append(os.path.join(dir_setup,'input_pf/ascii2pfb_Ks.tcl') )
+    if 'poros_anom' in settings_pfl['param_names']:
+        files_parflow.append(os.path.join(dir_setup,'input_pf/ascii2pfb_poros.tcl') )
+
+    # new setup:
+    # vars = ['nl','soil_ind','slopes','Ks','poros','vG_a','vG_n']
+    # dirs_files = [dir_setup/namelists, dir_setup/input_pf] etc.
+    #  
+    #
+    # for var_ file_, dir_ in zip(vars,files_parflow,dirs_files)
+    # if 'poros' in var_:
+    #   if 'poros' in settings_pfl['param_names']:
+    #      dir_var = dir_real #in the case var is enabled in the DA, it's written to the realization directory
+    #   else:
+    #      dir_var = os.path.join(dir_setup,'input_pf') #otherwise take the standard .sa file
+    # replace dir_real by dir_var
+    # if var_ == 'nl':
+    #   if 'Ks_tensor' in settings_pfl['param_names']:
+    #      dir_var = dir_real
+    #   else:
+    #      dir_var = os.path.join(dir_setup,'namelists') 
+    #      filedata = filedata.replace('__Ks_tensor__', '%.1f'%1000)
+        
     for file_ in files_parflow:
 
         with open( file_ , 'r') as file :
@@ -84,19 +110,23 @@ def adjust_parflow_files(dir_setup,dir_run,dir_build,dir_bin,dir_real,settings_p
           file.write(filedata)
         os.chmod(os.path.join(dir_run,os.path.basename(file_)),0o755)
 
-def make_parflow_executable(dir_run,dir_build):
+def make_parflow_executable(dir_run,dir_build,settings_pfl):
     str_cmd = '''
     source %s
-    tclsh %s
     tclsh %s
     tclsh %s
     tclsh %s
     ''' % (os.path.join(dir_build,'bldsva/machines/JUWELS/loadenvs.Intel'),
            os.path.join(dir_run,'ascii2pfb_slopes.tcl'),
            os.path.join(dir_run,'ascii2pfb_SoilInd.tcl'),
-           os.path.join(dir_run,'ascii2pfb_Ks.tcl'),
            os.path.join(dir_run,'coup_oas.tcl'))
 
+    # if parameters are to be estimated, add their tcl scripts to the commands
+    if 'Ks_anom' in settings_pfl['param_names'] or 'Ks' in settings_pfl['param_names']:
+        str_cmd += 'tclsh %s\n' % os.path.join(dir_run,'ascii2pfb_Ks.tcl')
+    if 'poros_anom' in settings_pfl['param_names']:
+        str_cmd += 'tclsh %s\n' % os.path.join(dir_run,'ascii2pfb_poros.tcl')
+    
     os.system(str_cmd)    
 
 def adjust_oasis_files(dir_setup,dir_run,settings_clm,settings_pfl):
@@ -227,7 +257,7 @@ def remove_misc_files(dir_run):
             
     
 def setup_submit_wait(i_real,settings_run,settings_clm,settings_pfl,settings_sbatch,date_results_iter):
-    
+    # time.sleep()
     dir_real = os.path.join(settings_run['dir_iter'],'R%3.3i'%i_real)
     
     for i1,date_list in enumerate(date_results_iter):
@@ -288,6 +318,7 @@ def setup_submit_wait(i_real,settings_run,settings_clm,settings_pfl,settings_sba
         ## Main loop: if the given run directory does not exist prepare and submit the run
         if not os.path.exists(dir_run):
             print('Preparing simulation in %s' % dir_run )
+            
             os.mkdir(dir_run)
 
             copy_binaries(settings_run['dir_binaries'],dir_run)
@@ -301,7 +332,7 @@ def setup_submit_wait(i_real,settings_run,settings_clm,settings_pfl,settings_sba
             adjust_parflow_files(settings_run['dir_setup'],dir_run,
                                  settings_run['dir_build'],settings_run['dir_binaries'],
                                  dir_real,settings_pfl)
-            make_parflow_executable(dir_run,settings_run['dir_build'])
+            make_parflow_executable(dir_run,settings_run['dir_build'],settings_pfl)
 
             adjust_oasis_files(settings_run['dir_setup'],dir_run,settings_clm,settings_pfl)
             copy_oasis_files(settings_run['dir_setup'],dir_run)

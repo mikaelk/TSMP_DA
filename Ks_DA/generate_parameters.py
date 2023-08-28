@@ -565,7 +565,7 @@ def generate_poros_anom(i_real,settings_setup,settings_run):
     anom_allv = 0 #
     indi_water = 21
     indi_allv = 13
-    
+
     X_train = np.load(os.path.join(dir_in,'poros_anom.static.npy'))
     Y_train = np.load(os.path.join(dir_in,'poros_anom.param.%3.3i.%3.3i.%3.3i.npy'%(settings_setup['i_date'],settings_setup['i_iter'],i_real) ))
       

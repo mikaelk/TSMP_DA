@@ -124,202 +124,203 @@ def plot_results_ml(operator,settings_gen,settings_run):
         plt.savefig(os.path.join(settings_run['dir_figs'],'mismatch_%s_%3.3i.png'%(str_date,settings_gen['i_iter']) ) )
   
         plt.close('all')
-        
-
-data_names = ['SMAP']
-data_var = [0.1**2]
-
-### Unpack some of the settings into variables
-# Functions that are run to initialize the parameters to be assimilated. 
-# E.g. for spatial parameter fields, initialize the static fields (x,y,z) locations and the prior/uncertainty estimates
-param_setup = settings_DA['param_setup'] 
-# Functions that are run to generate realizations of parameters/state variables
-param_gen   = settings_DA['param_gen']
-# Define parameter names; parameters values are stored in (%s.param.npy % param_name) files
-param_names = settings_DA['param_names']
-
-n_parallel = settings_DA['n_parallel']
-n_parallel_setup = settings_DA['n_parallel_setup']
-n_ensemble = settings_DA['n_ensemble']
-n_iter = settings_DA['n_iter']
-dir_setup = settings_run['dir_setup']
-dir_template = settings_run['dir_template']
-
-
-if n_iter > 1:
-    alpha = n_iter*np.ones(n_iter)
-elif n_iter == 8:
-    alpha = np.array([20.719,19.0,17.,16.,15.,9.,5.,2.5])    
-else:
-    alpha = [1.]
-        
-'''
- 1) Copy the folder template to the setup location if the destination does not exist
-'''
-if not os.path.exists(dir_setup):
-    print('Copying folder template from %s to %s' % (dir_template,dir_setup) )
-    shutil.copytree(dir_template,dir_setup)
-else:
-    print('Continuing simulation in %s' % dir_setup)
-# os.chdir(dir_setup)
    
-# copy settings file for later use
-dir_settings = os.path.join(settings_run['dir_setup'],'settings')
-if not os.path.exists(dir_settings):
-    os.mkdir(dir_settings)
-    shutil.copy('settings.py',dir_settings)
-    
-dir_figs = os.path.join(dir_setup,'figures')
-settings_run['dir_figs'] = dir_figs
-if not os.path.exists(dir_figs):
-    print('Creating folder to store DA information: %s' % (dir_figs) )
-    os.mkdir(dir_figs)
-    
-dir_DA = os.path.join(dir_setup,'input_DA')
-settings_run['dir_DA'] = dir_DA
-if not os.path.exists(dir_DA):
-    print('Creating folder to store DA information: %s' % (dir_DA) )
-    os.mkdir(dir_DA)
-    
-    # setup parameters: prior/uncertainties, + static properties based on the settings if necessary
-    for fn in param_setup:
-        fn(settings_gen,settings_run)
-        
-# Read parameter length and put in dictionary here
-for param_ in param_names:
-    settings_gen['param_length'][param_] = np.load(os.path.join(dir_DA,'%s.param.000.000.prior.npy' % param_) ).shape[0]
-    
-#%% ----------- DA loop -----------
-   
-    
-#%% ----------- date loop -----------    
-# this comes in the date loop, e.g. perform the smoother over a period over 1 year:
-i_date = 0
-date_results_iter = date_results_binned[i_date]
-date_start_sim = date_results_binned[i_date][0][0]#datetime(2019,1,2,12,0,0)
-date_end_sim = date_results_binned[i_date][-1][-1]#datetime(2019,12,31,12,0,0)
-str_date = str(date_start_sim.date()).replace('-','') + '-' + str(date_end_sim.date()).replace('-','')
-dir_date = os.path.join(dir_setup,str_date)
-if not os.path.exists(dir_date):
-    print('Creating folder for dates %s: %s' % (str_date,dir_date) )
-    os.mkdir(dir_date)
-    
-## TEMP
-date_DA_start = date_end_sim - timedelta(days=30) # spinup, only assimilate last 30 days
-    
-mismatch_iter = [0]
-#%% ----------- iteration loop -----------    
-# this comes in the iteration loop, e.g. interate every year n times in the optimization
-for i_iter in np.arange(n_iter):
+if __name__ == '__main__':
 
-    # Set initialization flag to True in the first loop (for parameter initialization)
-    if i_iter == 0:
-        init = True
+    data_names = ['SMAP']
+    data_var = [0.15**2]
+
+    ### Unpack some of the settings into variables
+    # Functions that are run to initialize the parameters to be assimilated. 
+    # E.g. for spatial parameter fields, initialize the static fields (x,y,z) locations and the prior/uncertainty estimates
+    param_setup = settings_DA['param_setup'] 
+    # Functions that are run to generate realizations of parameters/state variables
+    param_gen   = settings_DA['param_gen']
+    # Define parameter names; parameters values are stored in (%s.param.npy % param_name) files
+    param_names = settings_DA['param_names']
+
+    n_parallel = settings_DA['n_parallel']
+    n_parallel_setup = settings_DA['n_parallel_setup']
+    n_ensemble = settings_DA['n_ensemble']
+    n_iter = settings_DA['n_iter']
+    dir_setup = settings_run['dir_setup']
+    dir_template = settings_run['dir_template']
+
+
+    if n_iter > 1:
+        alpha = n_iter*np.ones(n_iter)
+    elif n_iter == 8:
+        alpha = np.array([20.719,19.0,17.,16.,15.,9.,5.,2.5])    
     else:
-        init = False
-    str_iter = 'i%3.3i' % i_iter
-    dir_iter = os.path.join(dir_date,str_iter)
-    if os.path.exists(os.path.join(dir_DA,'%s.param.000.%3.3i.000.npy'%(param_names[0],i_iter+1)) ): #check if the next iteration parameter files already exist
-        print('Iteration %i seems to have finished succesfully, continuing with the next iteration...' % i_iter)
+        alpha = [1.]
+
+    '''
+     1) Copy the folder template to the setup location if the destination does not exist
+    '''
+    if not os.path.exists(dir_setup):
+        print('Copying folder template from %s to %s' % (dir_template,dir_setup) )
+        shutil.copytree(dir_template,dir_setup)
     else:
-        if not os.path.exists(dir_iter):
-            print('Creating folder for iteration %i: %s' % (i_iter,dir_iter) )
-            os.mkdir(dir_iter)
+        print('Continuing simulation in %s' % dir_setup)
+    # os.chdir(dir_setup)
 
-        #%% ----------- ensemble member loop (parallel) -----------    
-        # ensemble member (realization) loop, done in parallel
-        # member 0 is reserved for the most likely parameter values
+    # copy settings file for later use
+    dir_settings = os.path.join(settings_run['dir_setup'],'settings')
+    if not os.path.exists(dir_settings):
+        os.mkdir(dir_settings)
+        shutil.copy('settings.py',dir_settings)
 
-        settings_run['dir_iter'] = dir_iter
-        settings_gen['i_date'] = i_date
-        settings_gen['i_iter'] = i_iter
-        settings_gen['param_gen'] = param_gen
-        settings_gen['param_names'] = param_names
-        # settings_gen['param_length'] = param_length
-        
-        with Pool(processes=n_parallel_setup) as pool:
-            pool.starmap(realize_parameters, zip(np.arange(0,n_ensemble+1),repeat(settings_gen),repeat(settings_run),repeat(init)) )
+    dir_figs = os.path.join(dir_setup,'figures')
+    settings_run['dir_figs'] = dir_figs
+    if not os.path.exists(dir_figs):
+        print('Creating folder to store DA information: %s' % (dir_figs) )
+        os.mkdir(dir_figs)
+
+    dir_DA = os.path.join(dir_setup,'input_DA')
+    settings_run['dir_DA'] = dir_DA
+    if not os.path.exists(dir_DA):
+        print('Creating folder to store DA information: %s' % (dir_DA) )
+        os.mkdir(dir_DA)
+
+        # setup parameters: prior/uncertainties, + static properties based on the settings if necessary
+        for fn in param_setup:
+            fn(settings_gen,settings_run)
+
+    # Read parameter length and put in dictionary here
+    for param_ in param_names:
+        settings_gen['param_length'][param_] = np.load(os.path.join(dir_DA,'%s.param.000.000.prior.npy' % param_) ).shape[0]
+
+    #%% ----------- DA loop -----------
 
 
-        # Aggregrate all parameter values into param_f
-        param_f = read_parameters(n_ensemble,settings_gen,settings_run)
-        n_param = len(param_f)
+    #%% ----------- date loop -----------    
+    # this comes in the date loop, e.g. perform the smoother over a period over 1 year:
+    i_date = 0
+    date_results_iter = date_results_binned[i_date]
+    date_start_sim = date_results_binned[i_date][0][0]#datetime(2019,1,2,12,0,0)
+    date_end_sim = date_results_binned[i_date][-1][-1]#datetime(2019,12,31,12,0,0)
+    str_date = str(date_start_sim.date()).replace('-','') + '-' + str(date_end_sim.date()).replace('-','')
+    dir_date = os.path.join(dir_setup,str_date)
+    if not os.path.exists(dir_date):
+        print('Creating folder for dates %s: %s' % (str_date,dir_date) )
+        os.mkdir(dir_date)
 
-        with Pool(processes=n_parallel) as pool:
-            pool.starmap(setup_submit_wait, zip(np.arange(0,n_ensemble+1),repeat(settings_run),repeat(settings_clm),
-                                               repeat(settings_pfl),repeat(settings_sbatch),repeat(date_results_iter)) )
+    ## TEMP
+    date_DA_start = date_end_sim - timedelta(days=30) # spinup, only assimilate last 30 days
+
+    mismatch_iter = [0]
+    #%% ----------- iteration loop -----------    
+    # this comes in the iteration loop, e.g. interate every year n times in the optimization
+    for i_iter in np.arange(n_iter):
+
+        # Set initialization flag to True in the first loop (for parameter initialization)
+        if i_iter == 0:
+            init = True
+        else:
+            init = False
+        str_iter = 'i%3.3i' % i_iter
+        dir_iter = os.path.join(dir_date,str_iter)
+        if os.path.exists(os.path.join(dir_DA,'%s.param.000.%3.3i.000.npy'%(param_names[0],i_iter+1)) ): #check if the next iteration parameter files already exist
+            print('Iteration %i seems to have finished succesfully, continuing with the next iteration...' % i_iter)
+        else:
+            if not os.path.exists(dir_iter):
+                print('Creating folder for iteration %i: %s' % (i_iter,dir_iter) )
+                os.mkdir(dir_iter)
+
+            #%% ----------- ensemble member loop (parallel) -----------    
+            # ensemble member (realization) loop, done in parallel
+            # member 0 is reserved for the most likely parameter values
+
+            settings_run['dir_iter'] = dir_iter
+            settings_gen['i_date'] = i_date
+            settings_gen['i_iter'] = i_iter
+            settings_gen['param_gen'] = param_gen
+            settings_gen['param_names'] = param_names
+            # settings_gen['param_length'] = param_length
+
+            with Pool(processes=n_parallel_setup) as pool:
+                pool.starmap(realize_parameters, zip(np.arange(0,n_ensemble+1),repeat(settings_gen),repeat(settings_run),repeat(init)) )
 
 
-        # Measurement operator: map state vector onto measurement space
-        # i.e. get the TSMP values at the SMAP times/locations
-        operator = operator_clm_SMAP(settings_DA['file_lsm'],settings_DA['file_corner'],settings_DA['folder_SMAP'])
-        # 1) get the observed quantities, and corresponding lon/lat/time    
-        data_measured = operator.get_measurements(date_results_iter,date_DA_start=date_DA_start)
+            # Aggregrate all parameter values into param_f
+            param_f = read_parameters(n_ensemble,settings_gen,settings_run)
+            n_param = len(param_f)
 
-        ### TEMPORARY: reduce number of measurements
-        n_select = 20000
-        frac_select = min((n_select / len(data_measured)),.99)
-        mask_measured = np.random.choice([0,1],size=len(data_measured),p=[1-frac_select,frac_select]).astype(bool) 
-        data_measured=data_measured[mask_measured]
+            with Pool(processes=n_parallel) as pool:
+                pool.starmap(setup_submit_wait, zip(np.arange(0,n_ensemble+1),repeat(settings_run),repeat(settings_clm),
+                                                   repeat(settings_pfl),repeat(settings_sbatch),repeat(date_results_iter)) )
 
-        n_data = len(data_measured)
-        C_D = data_var[0]*sparse.eye(n_data)    
 
-        # 2) get the corresponding ensemble measurements ("forecast")
-        data_f = np.zeros([n_data,n_ensemble])
-        for i_real in np.arange(1,n_ensemble+1):    
-            data_f[:,i_real-1] = operator.interpolate_model_results(i_real,settings_run)[mask_measured]
-        # get most likely parameter output as well, to track if the iterations are improving
-        data_ml = operator.interpolate_model_results(0,settings_run)[mask_measured]
-        plot_results_ml(operator,settings_gen,settings_run)
-            
-            
-        # 3) construct covariance matrices based on ensemble of parameters and results (data)
-        C_MD = np.zeros([n_param,n_data],dtype=np.float32)
-        C_DD = np.zeros([n_data,n_data],dtype=np.float32)
-        param_mean = param_f.mean(axis=1)
-        data_mean = data_f.mean(axis=1)        
-        param_delta = np.zeros([n_param,n_ensemble])
-        data_delta = np.zeros([n_data,n_ensemble])
-        for i2 in range(n_ensemble):
-            param_delta[:,i2] = param_f[:,i2] - param_mean
-            data_delta[:,i2] = data_f[:,i2] - data_mean
+            # Measurement operator: map state vector onto measurement space
+            # i.e. get the TSMP values at the SMAP times/locations
+            operator = operator_clm_SMAP(settings_DA['file_lsm'],settings_DA['file_corner'],settings_DA['folder_SMAP'])
+            # 1) get the observed quantities, and corresponding lon/lat/time    
+            data_measured = operator.get_measurements(date_results_iter,date_DA_start=date_DA_start)
 
-            C_MD += np.outer(param_delta[:,i2],data_delta[:,i2])
-            C_DD += np.outer(data_delta[:,i2],data_delta[:,i2])
-        C_MD /= (n_ensemble - 1)
-        C_DD /= (n_ensemble - 1)
+            ### TEMPORARY: reduce number of measurements
+            n_select = 20000
+            frac_select = min((n_select / len(data_measured)),.99)
+            mask_measured = np.random.choice([0,1],size=len(data_measured),p=[1-frac_select,frac_select]).astype(bool) 
+            data_measured=data_measured[mask_measured]
 
-        # Kalman Gain matrix:
-        KG = np.dot(C_MD,np.linalg.inv(C_DD + alpha[i_iter]*C_D)) 
+            n_data = len(data_measured)
+            C_D = data_var[0]*sparse.eye(n_data)    
 
-        # 4) update the parameters
-        param_a = np.zeros([n_param, n_ensemble])
-        mean_mismatch_new = 0
-        for i_real in range(n_ensemble):
+            # 2) get the corresponding ensemble measurements ("forecast")
+            data_f = np.zeros([n_data,n_ensemble])
+            for i_real in np.arange(1,n_ensemble+1):    
+                data_f[:,i_real-1] = operator.interpolate_model_results(i_real,settings_run)[mask_measured]
+            # get most likely parameter output as well, to track if the iterations are improving
+            data_ml = operator.interpolate_model_results(0,settings_run)[mask_measured]
+            plot_results_ml(operator,settings_gen,settings_run)
 
-            z_d = np.random.normal(0,1,n_data)
-            data_perturbed = data_measured + np.sqrt(alpha[i_iter])*np.sqrt(C_D.diagonal())*z_d
 
-            mismatch = data_perturbed - data_f[:,i_real]
+            # 3) construct covariance matrices based on ensemble of parameters and results (data)
+            C_MD = np.zeros([n_param,n_data],dtype=np.float32)
+            C_DD = np.zeros([n_data,n_data],dtype=np.float32)
+            param_mean = param_f.mean(axis=1)
+            data_mean = data_f.mean(axis=1)        
+            param_delta = np.zeros([n_param,n_ensemble])
+            data_delta = np.zeros([n_data,n_ensemble])
+            for i2 in range(n_ensemble):
+                param_delta[:,i2] = param_f[:,i2] - param_mean
+                data_delta[:,i2] = data_f[:,i2] - data_mean
 
-            mean_mismatch_new += np.sum(mismatch**2)
+                C_MD += np.outer(param_delta[:,i2],data_delta[:,i2])
+                C_DD += np.outer(data_delta[:,i2],data_delta[:,i2])
+            C_MD /= (n_ensemble - 1)
+            C_DD /= (n_ensemble - 1)
 
-            # forecast -> analysis
-            param_a[:,i_real] = param_f[:,i_real] + np.dot(KG,mismatch)
+            # Kalman Gain matrix:
+            KG = np.dot(C_MD,np.linalg.inv(C_DD + alpha[i_iter]*C_D)) 
 
-        write_parameters(param_a,settings_gen,settings_run)
+            # 4) update the parameters
+            param_a = np.zeros([n_param, n_ensemble])
+            mean_mismatch_new = 0
+            for i_real in range(n_ensemble):
 
-        mean_mismatch_new /= n_ensemble
-        mismatch_iter.append(mean_mismatch_new)
-        print('Mismatch: %3.3f -> %3.3f' % (mismatch_iter[-2],mismatch_iter[-1]))
+                z_d = np.random.normal(0,1,n_data)
+                data_perturbed = data_measured + np.sqrt(alpha[i_iter])*np.sqrt(C_D.diagonal())*z_d
 
-#         file_clm_last = sorted(glob(os.path.join(settings_run['dir_iter'],'R000/**/clm.clm2.r*')))[-1]
-#         file_pfl_last = sorted(glob(os.path.join(settings_run['dir_iter'],'R000/**/*.out.*.nc')))[-1]
+                mismatch = data_perturbed - data_f[:,i_real]
 
-#         settings_pfl.update({'IC_file':file_pfl_last})
-#         settings_clm.update({'IC_file':file_clm_last})
-        
-#         print('Resuming next iteration from CLM file %s' % file_clm_last)
-#         print('Resuming next iteration from PFL file %s' % file_pfl_last)
-        
+                mean_mismatch_new += np.sum(mismatch**2)
+
+                # forecast -> analysis
+                param_a[:,i_real] = param_f[:,i_real] + np.dot(KG,mismatch)
+
+            write_parameters(param_a,settings_gen,settings_run)
+
+            mean_mismatch_new /= n_ensemble
+            mismatch_iter.append(mean_mismatch_new)
+            print('Mismatch: %3.3f -> %3.3f' % (mismatch_iter[-2],mismatch_iter[-1]))
+
+    #         file_clm_last = sorted(glob(os.path.join(settings_run['dir_iter'],'R000/**/clm.clm2.r*')))[-1]
+    #         file_pfl_last = sorted(glob(os.path.join(settings_run['dir_iter'],'R000/**/*.out.*.nc')))[-1]
+
+    #         settings_pfl.update({'IC_file':file_pfl_last})
+    #         settings_clm.update({'IC_file':file_clm_last})
+
+    #         print('Resuming next iteration from CLM file %s' % file_clm_last)
+    #         print('Resuming next iteration from PFL file %s' % file_pfl_last)
+
