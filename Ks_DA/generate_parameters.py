@@ -3,6 +3,7 @@ import sys
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, Matern
 import os
+import xarray as xr
 
 extra_path = '/p/project/cjibg36/kaandorp2/Git/SLOTH' 
 if extra_path not in sys.path:
@@ -11,7 +12,7 @@ if extra_path not in sys.path:
 from sloth.IO import readSa, writeSa
 
 
-def generate_anomaly_field(X_train,Y_train,data_indi,mode='ml'):
+def generate_anomaly_field(X_train,Y_train,data_indi,mode='ml',shape_out=None):
     """
     Generate anomaly field using Gaussian Process Regression
     X_train: [X,Y,Z] coordinates
@@ -19,7 +20,10 @@ def generate_anomaly_field(X_train,Y_train,data_indi,mode='ml'):
     data_indi: indicator field, used to mask ocean
     mode: most likely (ml) or additional random noise based on Kriged function (rnd, don't use this)
     """
-    anom_field = np.nan*np.zeros(data_indi.shape)
+    if shape_out:
+        anom_field = np.nan*np.zeros(shape_out)
+    else: #base anomaly field on the indicator file shape
+        anom_field = np.nan*np.zeros(data_indi.shape)
     
     def fit_gprs(i_sample_z,X_train,Y_train):
 
@@ -600,8 +604,133 @@ def generate_poros_anom(i_real,settings_setup,settings_run):
             plt.title('porosity, %s, layer:%i [m/h]' % (method_,i_layer) )
             plt.savefig( os.path.join(folder_figs,'poros_real%3.3i_%3.3i.png'% (i_real,i_layer)) )
             plt.close()  
-            
-            
+ 
+
+def generate_slope_anom(i_real,settings_setup,settings_run):
+  
+    dir_real = os.path.join(settings_run['dir_iter'],'R%3.3i'%i_real)
+    
+    file_slopex_in = settings_setup['file_slopex']
+    file_slopey_in = settings_setup['file_slopey']
+    file_slopex_out = os.path.join(dir_real,'slopex.sa') 
+    file_slopey_out = os.path.join(dir_real,'slopey.sa') 
+
+    file_indi = settings_setup['file_indi']
+    
+    sample_every_xy = settings_setup['slope_sample_xy']
+
+    plot = settings_setup['slope_plot']
+    folder_figs = os.path.join(dir_real,'figures') 
+    dir_in = settings_run['dir_DA']
+    mode = 'ml'
+
+    if plot:
+        import matplotlib.pyplot as plt
+        import matplotlib.colors as colors
+    if mode == 'rnd':
+        rnd_seed = np.random.randint(100)
+   
+    ### 1) read slope files, and indicator file (used as mask)
+    data_x = readSa(file_slopex_in)
+    data_y = readSa(file_slopey_in)
+    data_indi = readSa(file_indi)
+    
+    
+    ### 2) Add anomaly field
+    anom_water = 0 # no anomaly for water/alluvium
+    indi_water = 21
+
+    X_train = np.load(os.path.join(dir_in,'slope_anom.static.npy'))
+    Y_train = np.load(os.path.join(dir_in,'slope_anom.param.%3.3i.%3.3i.%3.3i.npy'%(settings_setup['i_date'],settings_setup['i_iter'],i_real) ))
+      
+    anom_field = generate_anomaly_field(X_train,Y_train,data_indi,mode='ml',shape_out=data_x.shape)
+    anom_field[data_indi[-2:-1,:,:] >= indi_water] = anom_water #-2:-1 is used to keep the first dimension 1 
+   
+    data_x = data_x*(10**(anom_field)) # anomaly field: 10**-1 -> 10**0 -> 10**1: 0.1 -> 1 -> 10 (multiplicative factor)
+    data_y = data_y*(10**(anom_field))
+    
+    writeSa(file_slopex_out,data_x)
+    writeSa(file_slopey_out,data_y)
+
+    if plot:
+        if not os.path.exists(folder_figs):
+            print('Making folder for verification plots in %s' % folder_figs )
+            os.mkdir(folder_figs)
+
+        plt.figure()
+        plt.pcolormesh(data_x[0,:,:] )
+        plt.colorbar(extend='both')
+        plt.title('slope (x)')
+        plt.savefig( os.path.join(folder_figs,'slopex_real%3.3i.png'% (i_real)) )
+        plt.close()  
+
+        plt.figure()
+        plt.pcolormesh(data_y[0,:,:] )
+        plt.colorbar(extend='both')
+        plt.title('slope (y)')
+        plt.savefig( os.path.join(folder_figs,'slopey_real%3.3i.png'% (i_real)) )
+        plt.close()  
+        
+        
+def generate_sandfrac_anom(i_real,settings_gen,settings_run):
+    dir_real = os.path.join(settings_run['dir_iter'],'R%3.3i'%i_real)
+    dir_in = settings_run['dir_DA']   
+
+    dir_surface = settings_gen['dir_clm_surf']
+    filename_surface = settings_gen['file_clm_surf']
+    file_out = os.path.join(dir_real,os.path.basename(filename_surface)) 
+    if os.path.exists(file_out): #if the surface file is already existing in DA dir, open it
+        dir_surface = dir_real
+    
+    sample_every_xy = settings_gen['texture_sample_xy']
+    sample_every_z = settings_gen['texture_sample_z']
+    mode = 'rnd'
+    length_scale = settings_gen['texture_anom_l']
+
+    plot = settings_gen['texture_plot']
+    folder_figs = os.path.join(dir_real,'figures') 
+
+    if plot:
+        import matplotlib.pyplot as plt
+        import matplotlib.colors as colors
+    if mode == 'rnd':
+        rnd_seed = np.random.randint(100)
+
+    ### 1) read texture data
+    data = xr.open_dataset(os.path.join(dir_surface,filename_surface))
+    mask_land = (data.PFTDATA_MASK.values == 1).astype(bool)
+    data_texture = data.PCT_SAND.values
+
+    ### 2) Add anomaly field
+    X_train = np.load(os.path.join(dir_in,'sandfrac_anom.static.npy'))
+    Y_train = np.load(os.path.join(dir_in,'sandfrac_anom.param.%3.3i.%3.3i.%3.3i.npy'%(settings_gen['i_date'],settings_gen['i_iter'],i_real) ))
+
+    anom_field = generate_anomaly_field(X_train,Y_train,data_texture,mode='ml',
+                                        shape_out=data_texture.shape,mask_land=mask_land,length_scale=length_scale)
+    anom_field[:,~mask_land]=0
+
+    data_texture = data_texture*(10**(anom_field)) # anomaly field: 10**-1 -> 10**0 -> 10**1: 0.1 -> 1 -> 10 (multiplicative factor)
+
+    max_sand = 99. 
+    data_texture[data_texture>max_sand] = max_sand
+
+    data['PCT_SAND'] = (['nlevsoi','lsmlat','lsmlon'],data_texture)
+
+    data.to_netcdf(file_out)
+
+    if plot:
+        if not os.path.exists(folder_figs):
+            print('Making folder for verification plots in %s' % folder_figs )
+            os.mkdir(folder_figs)
+
+        plt.figure()
+        plt.pcolormesh(data_texture[0,:,:] )
+        plt.colorbar(extend='both')
+        plt.title('Sand fraction (upper layer)')
+        plt.savefig( os.path.join(folder_figs,'sandfrac_real%3.3i.png'% (i_real)) )
+        plt.close()  
+    
+    
 def generate_Ks_tensor(i_real,settings_gen,settings_run):
     
     dir_in = settings_run['dir_DA']
