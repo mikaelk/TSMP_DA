@@ -2,8 +2,8 @@ import os
 import shutil
 
 
-from run_realization import setup_submit_wait
-from settings import settings_run,settings_clm,settings_pfl,settings_sbatch, date_iter_binned
+from run_realization_v2 import setup_submit_wait
+from settings import settings_run,settings_clm,settings_pfl,settings_sbatch, date_results_binned
 
 
 '''
@@ -12,6 +12,7 @@ from settings import settings_run,settings_clm,settings_pfl,settings_sbatch, dat
 if not os.path.exists(settings_run['dir_setup']):
     print('Copying folder template from %s to %s' % (settings_run['dir_template'],settings_run['dir_setup']) )
     shutil.copytree(settings_run['dir_template'],settings_run['dir_setup'])
+    os.mkdir(os.path.join(settings_run['dir_setup'],'R000'))
 else:
     print('Continuing simulation in %s' % settings_run['dir_setup'])
 
@@ -25,5 +26,5 @@ settings_run['dir_iter'] = settings_run['dir_setup']
 '''
  2) Submit run and wait
 '''
-setup_submit_wait(0,settings_run,settings_clm,settings_pfl,settings_sbatch,date_iter_binned)
+setup_submit_wait(0,settings_run,settings_clm,settings_pfl,settings_sbatch,date_results_binned[0])
 

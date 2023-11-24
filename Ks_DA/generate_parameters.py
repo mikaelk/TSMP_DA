@@ -4,6 +4,7 @@ from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, Matern
 import os
 import xarray as xr
+import shutil
 
 extra_path = '/p/project/cjibg36/kaandorp2/Git/SLOTH' 
 if extra_path not in sys.path:
@@ -12,7 +13,9 @@ if extra_path not in sys.path:
 from sloth.IO import readSa, writeSa
 
 
-def generate_anomaly_field(X_train,Y_train,data_indi,mode='ml',shape_out=None):
+def generate_anomaly_field(X_train,Y_train,data_indi,mode='ml',
+                           shape_out=None,mask_land=None,length_scale=30,
+                           vary_depth=True,depth_setting='PFL'):
     """
     Generate anomaly field using Gaussian Process Regression
     X_train: [X,Y,Z] coordinates
@@ -40,10 +43,20 @@ def generate_anomaly_field(X_train,Y_train,data_indi,mode='ml',shape_out=None):
 
         return gprs_
 
-    kernel = 1.0 * Matern(length_scale=30,nu=1.5,length_scale_bounds='fixed')
+    kernel = 1.0 * Matern(length_scale=length_scale,nu=1.5,length_scale_bounds='fixed')
 
-    indi_dz = 2*np.array([9.0,7.5,5.0,5.0,2.0,0.5,0.35,0.25,0.15,0.10,0.065,0.035,0.025,0.015,0.01])
-    indi_depths = np.flip(np.cumsum(np.flip(indi_dz)))
+    if depth_setting == 'PFL':
+        indi_dz = 2*np.array([9.0,7.5,5.0,5.0,2.0,0.5,0.35,0.25,0.15,0.10,0.065,0.035,0.025,0.015,0.01])
+        indi_depths = np.flip(np.cumsum(np.flip(indi_dz)))
+    elif depth_setting == 'eCLM':
+        eCLM_dz = np.array([0.02,0.04,0.06,0.08,0.120,
+                    0.160,0.200,0.240,0.280,0.320,
+                    0.360,0.400,0.440,0.540,0.640,
+                    0.740,0.840,0.940,1.040,1.140,
+                    2.390,4.676,7.635,11.140,15.115])
+        indi_depths = np.cumsum(eCLM_dz) - .5*eCLM_dz
+    else:
+        raise RuntimeError('define dz')
     ### /parameters
 
     # indices of layers to be sampled by Kriging
@@ -58,14 +71,24 @@ def generate_anomaly_field(X_train,Y_train,data_indi,mode='ml',shape_out=None):
     i_lower_old = np.inf
 
     for i_layer in range(anom_field.shape[0]):
+        
+        if mask_land is None:     
+            mask_land = (data_indi[i_layer,:] < 20)
+
         print('Generating anomaly field for layer %i' % i_layer,flush=True)
-        mask_land = (data_indi[i_layer,:] < 20)
         X_test = np.array([X[0][mask_land],
                         X[1][mask_land]]).T
 
-
+        if not vary_depth: #2D mode -> same anomaly for all layers
+            if i_layer == 0:
+                anom_ = gprs[i_layer].predict(X_test)
+                for i_layer_ in range(anom_field.shape[0]):
+                    anom_field[i_layer_,mask_land] = anom_
+            else: #other layers are based on layer 0 -> pass
+                pass
+            
         # layer is sampled -> Kriging
-        if i_layer in i_sample_z:
+        elif i_layer in i_sample_z:
             if mode == 'ml':
                 anom_ = gprs[i_layer].predict(X_test)
             elif mode == 'rnd':
@@ -684,6 +707,11 @@ def generate_sandfrac_anom(i_real,settings_gen,settings_run):
     
     sample_every_xy = settings_gen['texture_sample_xy']
     sample_every_z = settings_gen['texture_sample_z']
+    if sample_every_z is None:
+        vary_depth=False
+    else:
+        vary_depth=True
+        
     mode = 'rnd'
     length_scale = settings_gen['texture_anom_l']
 
@@ -700,37 +728,210 @@ def generate_sandfrac_anom(i_real,settings_gen,settings_run):
     data = xr.open_dataset(os.path.join(dir_surface,filename_surface))
     mask_land = (data.PFTDATA_MASK.values == 1).astype(bool)
     data_texture = data.PCT_SAND.values
-
+    data_clay = data.PCT_CLAY.values
+    
     ### 2) Add anomaly field
     X_train = np.load(os.path.join(dir_in,'sandfrac_anom.static.npy'))
     Y_train = np.load(os.path.join(dir_in,'sandfrac_anom.param.%3.3i.%3.3i.%3.3i.npy'%(settings_gen['i_date'],settings_gen['i_iter'],i_real) ))
 
     anom_field = generate_anomaly_field(X_train,Y_train,data_texture,mode='ml',
-                                        shape_out=data_texture.shape,mask_land=mask_land,length_scale=length_scale)
+                                        shape_out=data_texture.shape,mask_land=mask_land,length_scale=length_scale,
+                                        vary_depth=vary_depth,depth_setting='eCLM')
     anom_field[:,~mask_land]=0
 
     data_texture = data_texture*(10**(anom_field)) # anomaly field: 10**-1 -> 10**0 -> 10**1: 0.1 -> 1 -> 10 (multiplicative factor)
 
-    max_sand = 99. 
-    data_texture[data_texture>max_sand] = max_sand
+    # make sure sand+clay do not exceed 100%
+    total = data_texture+data_clay
+    data_texture[total>100] -= (total-100)[total>100]
+    
+    # max_sand = 99. 
+    # data_texture[data_texture>max_sand] = max_sand
 
     data['PCT_SAND'] = (['nlevsoi','lsmlat','lsmlon'],data_texture)
 
     data.to_netcdf(file_out)
 
     if plot:
+        plot_ctrl = True
         if not os.path.exists(folder_figs):
             print('Making folder for verification plots in %s' % folder_figs )
             os.mkdir(folder_figs)
 
         plt.figure()
         plt.pcolormesh(data_texture[0,:,:] )
+        if plot_ctrl:
+            plt.plot(X_train[:,2],X_train[:,1],'kx')
         plt.colorbar(extend='both')
         plt.title('Sand fraction (upper layer)')
         plt.savefig( os.path.join(folder_figs,'sandfrac_real%3.3i.png'% (i_real)) )
         plt.close()  
+
+        plt.figure()
+        plt.pcolormesh(data_texture[-1,:,:] )
+        if plot_ctrl:
+            plt.plot(X_train[:,2],X_train[:,1],'kx')
+        plt.colorbar(extend='both')
+        plt.title('Sand fraction (lowest layer)')
+        plt.savefig( os.path.join(folder_figs,'sandfrac_real%3.3i_deep.png'% (i_real)) )
+        plt.close()  
+
+def generate_clayfrac_anom(i_real,settings_gen,settings_run):
+    dir_real = os.path.join(settings_run['dir_iter'],'R%3.3i'%i_real)
+    dir_in = settings_run['dir_DA']   
+
+    dir_surface = settings_gen['dir_clm_surf']
+    filename_surface = settings_gen['file_clm_surf']
+    file_out = os.path.join(dir_real,os.path.basename(filename_surface)) 
+    file_out_tmp = file_out + '.tmp'
+    if os.path.exists(file_out): #if the surface file is already existing in DA dir, open it
+        dir_surface = dir_real
     
+    sample_every_xy = settings_gen['texture_sample_xy']
+    sample_every_z = settings_gen['texture_sample_z']
+    if sample_every_z is None:
+        vary_depth=False
+    else:
+        vary_depth=True
+        
+    mode = 'rnd'
+    length_scale = settings_gen['texture_anom_l']
+
+    plot = settings_gen['texture_plot']
+    folder_figs = os.path.join(dir_real,'figures') 
+
+    if plot:
+        import matplotlib.pyplot as plt
+        import matplotlib.colors as colors
+    if mode == 'rnd':
+        rnd_seed = np.random.randint(100)
+
+    ### 1) read texture data
+    data = xr.open_dataset(os.path.join(dir_surface,filename_surface))
+    mask_land = (data.PFTDATA_MASK.values == 1).astype(bool)
+    data_texture = data.PCT_CLAY.values
+    data_sand = data.PCT_SAND.values
     
+    ### 2) Add anomaly field
+    X_train = np.load(os.path.join(dir_in,'clayfrac_anom.static.npy'))
+    Y_train = np.load(os.path.join(dir_in,'clayfrac_anom.param.%3.3i.%3.3i.%3.3i.npy'%(settings_gen['i_date'],settings_gen['i_iter'],i_real) ))
+
+    anom_field = generate_anomaly_field(X_train,Y_train,data_texture,mode='ml',
+                                        shape_out=data_texture.shape,mask_land=mask_land,length_scale=length_scale,
+                                        vary_depth=vary_depth,depth_setting='eCLM')
+    anom_field[:,~mask_land]=0
+
+    data_texture = data_texture*(10**(anom_field)) # anomaly field: 10**-1 -> 10**0 -> 10**1: 0.1 -> 1 -> 10 (multiplicative factor)
+
+    # make sure sand+clay do not exceed 100%
+    total = data_texture+data_sand
+    data_texture[total>100] -= (total-100)[total>100]
+
+    if np.any(data_texture<0):
+        print('Warning: Clay percentage below 0!!!',flush=True)
+        data_texture[data_texture<0] = 0
+        
+    # max_sand = 99. 
+    # data_texture[data_texture>max_sand] = max_sand
+
+    data['PCT_CLAY'] = (['nlevsoi','lsmlat','lsmlon'],data_texture)
+
+    data.to_netcdf(file_out_tmp)
+    data.close()
+    shutil.move(file_out_tmp,file_out)
+    # os.remove(file_out_tmp)
+    
+    if plot:
+        plot_ctrl = True
+        if not os.path.exists(folder_figs):
+            print('Making folder for verification plots in %s' % folder_figs )
+            os.mkdir(folder_figs)
+
+        plt.figure()
+        plt.pcolormesh(data_texture[0,:,:] )
+        if plot_ctrl:
+            plt.plot(X_train[:,2],X_train[:,1],'kx')
+        plt.colorbar(extend='both')
+        plt.title('Clay fraction (upper layer)')
+        plt.savefig( os.path.join(folder_figs,'clayfrac_real%3.3i.png'% (i_real)) )
+        plt.close()  
+        
+    
+def generate_orgfrac_anom(i_real,settings_gen,settings_run):
+    dir_real = os.path.join(settings_run['dir_iter'],'R%3.3i'%i_real)
+    dir_in = settings_run['dir_DA']   
+
+    dir_surface = settings_gen['dir_clm_surf']
+    filename_surface = settings_gen['file_clm_surf']
+    file_out = os.path.join(dir_real,os.path.basename(filename_surface)) 
+    file_out_tmp = file_out + '.tmp'
+    if os.path.exists(file_out): #if the surface file is already existing in DA dir, open it
+        dir_surface = dir_real
+    
+    sample_every_xy = settings_gen['texture_sample_xy']
+    sample_every_z = settings_gen['texture_sample_z']
+    if sample_every_z is None:
+        vary_depth=False
+    else:
+        vary_depth=True
+        
+    mode = 'rnd'
+    length_scale = settings_gen['texture_anom_l']
+
+    plot = settings_gen['texture_plot']
+    folder_figs = os.path.join(dir_real,'figures') 
+
+    if plot:
+        import matplotlib.pyplot as plt
+        import matplotlib.colors as colors
+    if mode == 'rnd':
+        rnd_seed = np.random.randint(100)
+
+    ### 1) read texture data
+    data = xr.open_dataset(os.path.join(dir_surface,filename_surface))
+    mask_land = (data.PFTDATA_MASK.values == 1).astype(bool)
+    data_texture = data.ORGANIC.values
+    data_sand =  data.PCT_SAND.values
+    data_clay =  data.PCT_CLAY.values
+    
+    ### 2) Add anomaly field
+    X_train = np.load(os.path.join(dir_in,'orgfrac_anom.static.npy'))
+    Y_train = np.load(os.path.join(dir_in,'orgfrac_anom.param.%3.3i.%3.3i.%3.3i.npy'%(settings_gen['i_date'],settings_gen['i_iter'],i_real) ))
+
+    anom_field = generate_anomaly_field(X_train,Y_train,data_texture,mode='ml',
+                                        shape_out=data_texture.shape,mask_land=mask_land,length_scale=length_scale,
+                                        vary_depth=vary_depth,depth_setting='eCLM')
+    anom_field[:,~mask_land]=0
+
+    data_texture = data_texture*(10**(anom_field)) # anomaly field: 10**-1 -> 10**0 -> 10**1: 0.1 -> 1 -> 10 (multiplicative factor)
+    
+    # 1st check: organic matter density should not exceed 130 (see CLM5 parameter file: organic_max)
+    max_organic = 130.
+    data_texture[data_texture>max_organic] = max_organic
+    
+    data['ORGANIC'] = (['nlevsoi','lsmlat','lsmlon'],data_texture)
+
+    data.to_netcdf(file_out_tmp)
+    data.close()
+    shutil.move(file_out_tmp,file_out)
+    # os.remove(file_out_tmp)
+
+    if plot:
+        plot_ctrl = True
+        if not os.path.exists(folder_figs):
+            print('Making folder for verification plots in %s' % folder_figs )
+            os.mkdir(folder_figs)
+
+        plt.figure()
+        plt.pcolormesh(data_texture[0,:,:] )
+        if plot_ctrl:
+            plt.plot(X_train[:,2],X_train[:,1],'kx')
+        plt.colorbar(extend='both')
+        plt.title('Organic density (upper layer)')
+        plt.savefig( os.path.join(folder_figs,'orgfrac_real%3.3i.png'% (i_real)) )
+        plt.close()  
+        
+        
 def generate_Ks_tensor(i_real,settings_gen,settings_run):
     
     dir_in = settings_run['dir_DA']
@@ -751,7 +952,349 @@ def generate_Ks_tensor(i_real,settings_gen,settings_run):
         file.write(filedata)
     os.chmod(file_out,0o755)    
 
+def generate_medlyn_slope(i_real,settings_gen,settings_run):
+    
+    dir_in = settings_run['dir_DA']
+    values = np.load(os.path.join(dir_in,'medlyn_slope.param.%3.3i.%3.3i.%3.3i.npy'%(settings_gen['i_date'],settings_gen['i_iter'],i_real) ))
+    values[values<.1] = .1 #slope needs to be positive, set to low value when necessary
+    
+    dir_setup = settings_run['dir_setup']
+    dir_real = os.path.join(settings_run['dir_iter'],'R%3.3i'%i_real)
+    
+    file_in = os.path.join(dir_setup,'input_clm/clm5_params.c171117.nc')
+    file_out = os.path.join(dir_real,'clm5_params.c171117.nc') 
+    file_out_tmp = file_out + '.tmp' 
+    
+    if os.path.exists(file_out): #the param file has been adjusted already -> open it again
+        file_in = file_out
+    
+    data = xr.load_dataset(file_in)
+    data.medlynslope.values[1:len(values)+1] = values.ravel()
+    
+    data.to_netcdf(file_out_tmp)
+    data.close()
+    shutil.move(file_out_tmp,file_out)    
+    
+def generate_medlyn_intercept(i_real,settings_gen,settings_run):
+    
+    dir_in = settings_run['dir_DA']
+    values = np.load(os.path.join(dir_in,'medlyn_intercept.param.%3.3i.%3.3i.%3.3i.npy'%(settings_gen['i_date'],settings_gen['i_iter'],i_real) ))
+    values[values<.1] = .1 #negative intercept -> negative stomatal conductance, set to low value instead
+    
+    dir_setup = settings_run['dir_setup']
+    dir_real = os.path.join(settings_run['dir_iter'],'R%3.3i'%i_real)
+    
+    file_in = os.path.join(dir_setup,'input_clm/clm5_params.c171117.nc')
+    file_out = os.path.join(dir_real,'clm5_params.c171117.nc') 
+    file_out_tmp = file_out + '.tmp' 
+    
+    if os.path.exists(file_out): #the param file has been adjusted already -> open it again
+        file_in = file_out
+    
+    data = xr.load_dataset(file_in)
+    data.medlynintercept[1:len(values)+1] = values.ravel()
+    
+    data.to_netcdf(file_out_tmp)
+    data.close()
+    shutil.move(file_out_tmp,file_out)   
+    
+    
+def generate_fff(i_real,settings_gen,settings_run):
+    
+    dir_in = settings_run['dir_DA']
+    value_log10 = np.load(os.path.join(dir_in,'fff.param.%3.3i.%3.3i.%3.3i.npy'%(settings_gen['i_date'],settings_gen['i_iter'],i_real) ))[0]
+    value = 10**value_log10
+    
+    dir_setup = settings_run['dir_setup']
+    dir_real = os.path.join(settings_run['dir_iter'],'R%3.3i'%i_real)
+    
+    file_in = os.path.join(dir_setup,'input_clm/clm5_params.c171117.nc')
+    file_out = os.path.join(dir_real,'clm5_params.c171117.nc') 
+    file_out_tmp = file_out + '.tmp' 
+    
+    if os.path.exists(file_out): #the param file has been adjusted already -> open it again
+        file_in = file_out
+    
+    data = xr.load_dataset(file_in)
+    data['fff'] = value
+    
+    data.to_netcdf(file_out_tmp)
+    data.close()
+    shutil.move(file_out_tmp,file_out)   
+    
+def generate_b_slope(i_real,settings_gen,settings_run):
+    
+    dir_in = settings_run['dir_DA']
+    value = np.load(os.path.join(dir_in,'b_slope.param.%3.3i.%3.3i.%3.3i.npy'%(settings_gen['i_date'],settings_gen['i_iter'],i_real) ))[0]
+    if value < 0.01:
+        print('Warning: b_slope moved towards negative values')
+        value = 0.01
+    
+    dir_setup = settings_run['dir_setup']
+    dir_real = os.path.join(settings_run['dir_iter'],'R%3.3i'%i_real)
+    
+    file_in = os.path.join(dir_setup,'input_clm/clm5_params.c171117.nc')
+    file_out = os.path.join(dir_real,'clm5_params.c171117.nc') 
+    file_out_tmp = file_out + '.tmp' 
+    
+    if os.path.exists(file_out): #the param file has been adjusted already -> open it again
+        file_in = file_out
+    
+    data = xr.load_dataset(file_in)
+    data['b_slope'] = value
+    
+    data.to_netcdf(file_out_tmp)
+    data.close()
+    shutil.move(file_out_tmp,file_out)  
+  
+def generate_b_intercept(i_real,settings_gen,settings_run):
+    
+    dir_in = settings_run['dir_DA']
+    value = np.load(os.path.join(dir_in,'b_intercept.param.%3.3i.%3.3i.%3.3i.npy'%(settings_gen['i_date'],settings_gen['i_iter'],i_real) ))[0]
+    # if value < 0.01:
+    #     print('Warning: b_slope moved towards negative values')
+    #     value = 0.01
+    
+    dir_setup = settings_run['dir_setup']
+    dir_real = os.path.join(settings_run['dir_iter'],'R%3.3i'%i_real)
+    
+    file_in = os.path.join(dir_setup,'input_clm/clm5_params.c171117.nc')
+    file_out = os.path.join(dir_real,'clm5_params.c171117.nc') 
+    file_out_tmp = file_out + '.tmp' 
+    
+    if os.path.exists(file_out): #the param file has been adjusted already -> open it again
+        file_in = file_out
+    
+    data = xr.load_dataset(file_in)
+    data['b_intercept'] = value
+    
+    data.to_netcdf(file_out_tmp)
+    data.close()
+    shutil.move(file_out_tmp,file_out)  
+   
+def generate_log_psis_slope(i_real,settings_gen,settings_run):
+    
+    dir_in = settings_run['dir_DA']
+    value = np.load(os.path.join(dir_in,'log_psis_slope.param.%3.3i.%3.3i.%3.3i.npy'%(settings_gen['i_date'],settings_gen['i_iter'],i_real) ))[0]
+    # if value < 0.01:
+    #     print('Warning: b_slope moved towards negative values')
+    #     value = 0.01
+    
+    dir_setup = settings_run['dir_setup']
+    dir_real = os.path.join(settings_run['dir_iter'],'R%3.3i'%i_real)
+    
+    file_in = os.path.join(dir_setup,'input_clm/clm5_params.c171117.nc')
+    file_out = os.path.join(dir_real,'clm5_params.c171117.nc') 
+    file_out_tmp = file_out + '.tmp' 
+    
+    if os.path.exists(file_out): #the param file has been adjusted already -> open it again
+        file_in = file_out
+    
+    data = xr.load_dataset(file_in)
+    data['log_psis_slope'] = value
+    
+    data.to_netcdf(file_out_tmp)
+    data.close()
+    shutil.move(file_out_tmp,file_out)  
+  
+def generate_log_psis_intercept(i_real,settings_gen,settings_run):
+    
+    dir_in = settings_run['dir_DA']
+    value = np.load(os.path.join(dir_in,'log_psis_intercept.param.%3.3i.%3.3i.%3.3i.npy'%(settings_gen['i_date'],settings_gen['i_iter'],i_real) ))[0]
+    # if value < 0.01:
+    #     print('Warning: b_slope moved towards negative values')
+    #     value = 0.01
+    
+    dir_setup = settings_run['dir_setup']
+    dir_real = os.path.join(settings_run['dir_iter'],'R%3.3i'%i_real)
+    
+    file_in = os.path.join(dir_setup,'input_clm/clm5_params.c171117.nc')
+    file_out = os.path.join(dir_real,'clm5_params.c171117.nc') 
+    file_out_tmp = file_out + '.tmp' 
+    
+    if os.path.exists(file_out): #the param file has been adjusted already -> open it again
+        file_in = file_out
+    
+    data = xr.load_dataset(file_in)
+    data['log_psis_intercept'] = value
+    
+    data.to_netcdf(file_out_tmp)
+    data.close()
+    shutil.move(file_out_tmp,file_out)  
+    
+def generate_log_ks_slope(i_real,settings_gen,settings_run):
+    
+    dir_in = settings_run['dir_DA']
+    value = np.load(os.path.join(dir_in,'log_ks_slope.param.%3.3i.%3.3i.%3.3i.npy'%(settings_gen['i_date'],settings_gen['i_iter'],i_real) ))[0]
+    # if value < 0.01:
+    #     print('Warning: b_slope moved towards negative values')
+    #     value = 0.01
+    
+    dir_setup = settings_run['dir_setup']
+    dir_real = os.path.join(settings_run['dir_iter'],'R%3.3i'%i_real)
+    
+    file_in = os.path.join(dir_setup,'input_clm/clm5_params.c171117.nc')
+    file_out = os.path.join(dir_real,'clm5_params.c171117.nc') 
+    file_out_tmp = file_out + '.tmp' 
+    
+    if os.path.exists(file_out): #the param file has been adjusted already -> open it again
+        file_in = file_out
+    
+    data = xr.load_dataset(file_in)
+    data['log_ks_slope'] = value
+    
+    data.to_netcdf(file_out_tmp)
+    data.close()
+    shutil.move(file_out_tmp,file_out)  
+  
+def generate_log_ks_intercept(i_real,settings_gen,settings_run):
+    
+    dir_in = settings_run['dir_DA']
+    value = np.load(os.path.join(dir_in,'log_ks_intercept.param.%3.3i.%3.3i.%3.3i.npy'%(settings_gen['i_date'],settings_gen['i_iter'],i_real) ))[0]
+    # if value < 0.01:
+    #     print('Warning: b_slope moved towards negative values')
+    #     value = 0.01
+    
+    dir_setup = settings_run['dir_setup']
+    dir_real = os.path.join(settings_run['dir_iter'],'R%3.3i'%i_real)
+    
+    file_in = os.path.join(dir_setup,'input_clm/clm5_params.c171117.nc')
+    file_out = os.path.join(dir_real,'clm5_params.c171117.nc') 
+    file_out_tmp = file_out + '.tmp' 
+    
+    if os.path.exists(file_out): #the param file has been adjusted already -> open it again
+        file_in = file_out
+    
+    data = xr.load_dataset(file_in)
+    data['log_ks_intercept'] = value
+    
+    data.to_netcdf(file_out_tmp)
+    data.close()
+    shutil.move(file_out_tmp,file_out)  
+    
+def generate_thetas_slope(i_real,settings_gen,settings_run):
+    
+    dir_in = settings_run['dir_DA']
+    value = np.load(os.path.join(dir_in,'thetas_slope.param.%3.3i.%3.3i.%3.3i.npy'%(settings_gen['i_date'],settings_gen['i_iter'],i_real) ))[0]
+    # if value < 0.01:
+    #     print('Warning: b_slope moved towards negative values')
+    #     value = 0.01
+    
+    dir_setup = settings_run['dir_setup']
+    dir_real = os.path.join(settings_run['dir_iter'],'R%3.3i'%i_real)
+    
+    file_in = os.path.join(dir_setup,'input_clm/clm5_params.c171117.nc')
+    file_out = os.path.join(dir_real,'clm5_params.c171117.nc') 
+    file_out_tmp = file_out + '.tmp' 
+    
+    if os.path.exists(file_out): #the param file has been adjusted already -> open it again
+        file_in = file_out
+    
+    data = xr.load_dataset(file_in)
+    data['thetas_slope'] = value
+    
+    data.to_netcdf(file_out_tmp)
+    data.close()
+    shutil.move(file_out_tmp,file_out)  
+  
+def generate_thetas_intercept(i_real,settings_gen,settings_run):
+    
+    dir_in = settings_run['dir_DA']
+    value = np.load(os.path.join(dir_in,'thetas_intercept.param.%3.3i.%3.3i.%3.3i.npy'%(settings_gen['i_date'],settings_gen['i_iter'],i_real) ))[0]
+    if value < 0.01:
+        print('Warning: thetas moved towards negative values')
+        value = 0.01
+    if value > .99:
+        print('Warning: thetas moved towards values >1')
+        value = .99
+        
+    dir_setup = settings_run['dir_setup']
+    dir_real = os.path.join(settings_run['dir_iter'],'R%3.3i'%i_real)
+    
+    file_in = os.path.join(dir_setup,'input_clm/clm5_params.c171117.nc')
+    file_out = os.path.join(dir_real,'clm5_params.c171117.nc') 
+    file_out_tmp = file_out + '.tmp' 
+    
+    if os.path.exists(file_out): #the param file has been adjusted already -> open it again
+        file_in = file_out
+    
+    data = xr.load_dataset(file_in)
+    data['thetas_intercept'] = value
+    
+    data.to_netcdf(file_out_tmp)
+    data.close()
+    shutil.move(file_out_tmp,file_out)  
+    
+def generate_orgmax(i_real,settings_gen,settings_run):
+    
+    dir_in = settings_run['dir_DA']
+    value = np.load(os.path.join(dir_in,'orgmax.param.%3.3i.%3.3i.%3.3i.npy'%(settings_gen['i_date'],settings_gen['i_iter'],i_real) ))[0]
+    if value < 10:
+        print('Warning: orgmax very small')
+        value = 10.
+    if value > 300:
+        print('Warning: orgmax very large')
+        value = 300.
+        
+    dir_setup = settings_run['dir_setup']
+    dir_real = os.path.join(settings_run['dir_iter'],'R%3.3i'%i_real)
+    
+    file_in = os.path.join(dir_setup,'input_clm/clm5_params.c171117.nc')
+    file_out = os.path.join(dir_real,'clm5_params.c171117.nc') 
+    file_out_tmp = file_out + '.tmp' 
+    
+    if os.path.exists(file_out): #the param file has been adjusted already -> open it again
+        file_in = file_out
+    
+    data = xr.load_dataset(file_in)
+    data['organic_max'].values = np.array([value])
+    
+    data.to_netcdf(file_out_tmp)
+    data.close()
+    shutil.move(file_out_tmp,file_out)  
+    
+def generate_om_hydraulic(i_real,settings_gen,settings_run):
+    # data['om_thetas_surf'] = 0.93
+    # data['om_b_surf'] = 2.7
+    # data['om_psis_surf'] = 10.3
+    # data['om_ks_surf'] = 0.28
+    # data['om_thetas_diff'] = 0.1
+    # data['om_b_diff'] = 9.3
+    # data['om_psis_diff'] = 0.2
+    
+    dir_in = settings_run['dir_DA']
+    values_ = np.load(os.path.join(dir_in,'om_hydraulic.param.%3.3i.%3.3i.%3.3i.npy'%(settings_gen['i_date'],settings_gen['i_iter'],i_real) ))
+    values = 10**values_
+    
+    values[0] = min(values[0],.99) #porosity: upper bound
+    values[4] = min(values[4],(values[0]-0.01)) #porosity: lower bound
+    values[1] = max(values[1],1.1) # lower bound b
+    values[3] = min(values[3],3.) #upper bound for k, high values lead to simulations stopping
+    
+    dir_setup = settings_run['dir_setup']
+    dir_real = os.path.join(settings_run['dir_iter'],'R%3.3i'%i_real)
+    
+    file_in = os.path.join(dir_setup,'input_clm/clm5_params.c171117.nc')
+    file_out = os.path.join(dir_real,'clm5_params.c171117.nc') 
+    file_out_tmp = file_out + '.tmp' 
+    
+    if os.path.exists(file_out): #the param file has been adjusted already -> open it again
+        file_in = file_out
+    
+    data = xr.load_dataset(file_in)
 
+    data['om_thetas_surf'] = values[0]
+    data['om_b_surf'] = values[1]
+    data['om_psis_surf'] = values[2]
+    data['om_ks_surf'] = values[3]
+    data['om_thetas_diff'] = values[4]
+    data['om_b_diff'] = values[5]
+    data['om_psis_diff'] = values[6]
+    
+    data.to_netcdf(file_out_tmp)
+    data.close()
+    shutil.move(file_out_tmp,file_out)    
+    
 if __name__ == '__main__':
     
     file_indi = '/p/project/cjibg36/kaandorp2/TSMP_patched/tsmp_cordex_111x108/input_pf/EUR-11_TSMP_FZJ-IBG3_CLMPFLDomain_111x108_INDICATOR_regridded_rescaled_SoilGrids250-v2017_BGR3_alv.sa'
