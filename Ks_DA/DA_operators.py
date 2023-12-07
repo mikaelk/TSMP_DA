@@ -146,9 +146,9 @@ class operator_clm_SMAP:
                         self.lons_out[date_] = lons[mask_SMAP_lsm]
                         self.lats_out[date_] = lats[mask_SMAP_lsm]
                         self.sm_out[date_] = sm[mask_SMAP_lsm]
-        return self.flatten_y(self.sm_out)
+        return self.flatten_y(self.sm_out), None #return measured values and their uncertainties if available
                 
-    def interpolate_model_results(self,i_real,settings_run,indices_z=None,var='H2OSOI',history_stream='h0'):
+    def interpolate_model_results(self,i_real,settings_run,indices_z=[0,1],var='SOILLIQ',history_stream='h0'):
         self.data_TSMP_i = {}
         self.files_clm = {}
         files_clm = sorted(glob(os.path.join(settings_run['dir_iter'],'R%3.3i/**/*.clm2.%s.*.nc'%(i_real,history_stream) )))
@@ -302,12 +302,17 @@ class operator_clm_SMAP:
                 
 class operator_clm_FLX:
     
-    def __init__(self,file_lsm,file_corner,folder_FLX,ignore_rivers=False):
+    def __init__(self,file_lsm,file_corner,folder_FLX,ignore_rivers=False,save_all_results=True):
    
         # 1) get TSMP grid: is used to select SMAP results falling withing this domain. A corner file is required to discard points outside of the domain       
         self.grid_TSMP = get_TSMP_grid(file_lsm,file_corner,ignore_rivers=ignore_rivers)   
         self.folder_FLX = folder_FLX
         
+        # FLX is cheap in terms of memory; store all results 
+        if save_all_results:
+            self.save_all_results = save_all_results
+            self.data_TSMP_all = {}
+            
     def flatten_y(self,y_in,var_=None):
         # flatten dict with values into a np.array
         if var_ == None:
@@ -479,7 +484,7 @@ class operator_clm_FLX:
                 del self.data_flx[flx_name]
 
         # return self.flatten_y(self.sm_out)
-        return self.data_flx        
+        return self.flatten_y(self.data_flx,var_='LE_CORR'),self.flatten_y(self.data_flx,var_='LE_RANDUNC')**2    
     
     
     def interpolate_model_results(self,i_real,settings_run,var='QFLX_EVAP_TOT',history_stream='h1'):
@@ -523,6 +528,12 @@ class operator_clm_FLX:
                 self.data_TSMP_i[flx_name][date_] = griddata((data_TSMP.lon_c.values[mask_nan],data_TSMP.lat_c.values[mask_nan]),
                                                              LE[mask_nan],
                                                              (lon_,lat_), method='nearest')
+                
+        if self.save_all_results:
+            self.data_TSMP_all[i_real] = self.data_TSMP_i
+            
+        return self.flatten_y(self.data_TSMP_i)
+    
                 
     def plot_results(self,i_iter,i_real,settings_run,dir_figs=None):
 
@@ -580,3 +591,38 @@ class operator_clm_FLX:
         plt.savefig(os.path.join(dir_figs,'FLX_locations.png' ) )
         
         plt.close('all')
+        
+    def plot_all_results(self,i_iter,settings_run,dir_figs=None):
+        
+        print('Creating combined plots for iter %i'%(i_iter))
+        if dir_figs is None:
+            dir_figs = os.path.join(settings_run['dir_iter'],'R%3.3i/figures'%i_real)
+        if not os.path.exists(dir_figs):
+            print('Creating folder to store FLX information: %s' % (dir_figs) )
+            os.mkdir(dir_figs)
+          
+        # 1) time series per location
+        for flx_name in list(self.data_TSMP_i.keys()):
+            cmap = plt.cm.tab20
+            plt.figure(figsize=(12,8))
+            plt.errorbar(self.data_flx[flx_name]['LE_CORR'].keys(),self.data_flx[flx_name]['LE_CORR'].values(),
+                         list(self.data_flx[flx_name]['LE_RANDUNC'].values()),fmt='o',capsize=2)
+            
+            lstyles = ['-','--',':']
+            for i_real in self.data_TSMP_all.keys(): 
+                i_style = int(i_real)//20
+                i_color = int(i_real)%20                
+                color_ = cmap(i_color)
+                
+                if int(i_real) == 0:
+                    color_ = 'k'
+                plt.plot(list(self.data_TSMP_all[i_real][flx_name].keys()),list(self.data_TSMP_all[i_real][flx_name].values()),
+                         linestyle=lstyles[i_style],color=color_, label='R%3.3i'%int(i_real) )
+
+            plt.xlabel('Date')
+            plt.ylabel('ET [mm/d]')
+            plt.title('%s' % (flx_name))
+            plt.legend(ncol=2)
+            plt.savefig(os.path.join(dir_figs,'FLX_timeseries_%s_%3.3i_all.png'%(flx_name,i_iter) ) )
+
+            plt.close('all')
