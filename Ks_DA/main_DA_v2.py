@@ -65,6 +65,7 @@ def realize_parameters(i_real,settings_gen,settings_run,init=True,run_prior=Fals
         
 def read_parameters(n_ensemble,settings_gen,settings_run):
     # read parameter values of the different ensemble members into an array
+    param_names = []
     for i1 in np.arange(n_ensemble):
         param_tmp = np.array([])
         
@@ -73,14 +74,15 @@ def read_parameters(n_ensemble,settings_gen,settings_run):
                 param_ = np.load(os.path.join(settings_run['dir_DA'],'%s.param.%3.3i.%3.3i.%3.3i.npy'% (p_name,settings_gen['i_date'],settings_gen['i_iter'],i1+1) ))
                 # settings_gen['param_length'][p_name] = len(param_)
                 param_tmp = np.append(param_tmp,param_)
+                param_names.extend([p_name + '_%i'%int_ for int_ in np.arange(len(param_))])
             param_all = param_tmp.copy()
-    
+            
         else:
             for i2,p_name in enumerate(settings_gen['param_names']):
                 param_ = np.load(os.path.join(settings_run['dir_DA'],'%s.param.%3.3i.%3.3i.%3.3i.npy'% (p_name,settings_gen['i_date'],settings_gen['i_iter'],i1+1) ))
                 param_tmp = np.append(param_tmp,param_)        
             param_all = np.vstack((param_all,param_tmp))
-    return param_all.T 
+    return param_all.T,param_names
 
 
 def write_parameters(parameters,settings_gen,settings_run):
@@ -101,38 +103,6 @@ def write_parameters(parameters,settings_gen,settings_run):
         np.save(os.path.join(dir_DA,'%s.param.%3.3i.%3.3i.%3.3i'%(p_name,settings_gen['i_date'],settings_gen['i_iter']+1,0)),param_)
         i_start = i_end   
         
-        
-def plot_results_ml(operator,settings_gen,settings_run):
-
-    for date_ in operator.data_TSMP_ml.keys():
-        
-        if len(operator.data_TSMP_ml[date_])>0:
-
-            str_date = str(date_.date())
-
-            min_ = min(min(operator.data_TSMP_ml[date_]),min(operator.sm_out[date_]))
-            max_ = max(max(operator.data_TSMP_ml[date_]),max(operator.sm_out[date_]))
-            R = pearsonr(operator.data_TSMP_ml[date_],operator.sm_out[date_])[0]
-            plt.figure(figsize=(5,5))
-            plt.plot(operator.data_TSMP_ml[date_],operator.sm_out[date_],'o',alpha=.7,markersize=3)
-            plt.plot([min_,max_],[min_,max_],'k:')
-            plt.xlabel('Modelled soil moisture')
-            plt.ylabel('SMAP soil moisture')
-            plt.title('%s, R=%3.3f (mean param. values)' % (date_,R) )
-            plt.savefig(os.path.join(settings_run['dir_figs'],'corr_%s_%3.3i.png'%(str_date,settings_gen['i_iter']) ) )
-
-            plt.figure()
-            plt.pcolormesh(operator.grid_TSMP['lon_corner'],operator.grid_TSMP['lat_corner'],operator.grid_TSMP['lsm']==2,cmap=plt.cm.Greys,vmax=2 )
-            diff = operator.sm_out[date_] - operator.data_TSMP_ml[date_]
-            # diff_max = max(np.abs(diff))
-            diff_max = 0.4
-            plt.scatter(operator.lons_out[date_],operator.lats_out[date_],s=10,c=diff,vmin=-diff_max,vmax=diff_max,cmap=plt.cm.bwr)
-            cbar = plt.colorbar(extend='both')
-            cbar.set_label('SMAP - TSMP (mean param. values)')
-            plt.savefig(os.path.join(settings_run['dir_figs'],'mismatch_%s_%3.3i.png'%(str_date,settings_gen['i_iter']) ) )
-
-            plt.close('all')
-
             
 def check_for_success(dir_iter,dir_DA,dir_settings,date_results_iter,n_ensemble):
 
@@ -214,21 +184,87 @@ def check_for_success(dir_iter,dir_DA,dir_settings,date_results_iter,n_ensemble)
     return n_ensemble, reread_required
 
 
+def mask_observations(data_names,data_measured,data_var,data_nselect,data_mask,factor_inflate=1.):
+    data_indices = {}
+    i_start = 0
+    i_end = np.inf
+    for i1,var_ in enumerate(data_names):
+        n_select = data_nselect[var_]
+        if len(data_measured[var_]) < n_select:
+            data_mask[var_] = np.ones(len(data_measured[var_]),dtype=bool)
+            n_select = len(data_measured[var_])
+        else:
+            frac_select = min((n_select / len(data_measured[var_])),.99)
+            data_mask[var_] = np.random.choice([0,1],size=len(data_measured[var_]),p=[1-frac_select,frac_select]).astype(bool) 
+            n_select = int(data_mask[var_].sum())
+        i_end = i_start + n_select
+        data_indices[var_] = [i_start,i_end]
+        
+        if i1 == 0:
+            data_measured_masked = data_measured[var_][data_mask[var_]].copy()
+            if type(data_var[var_]) == float:
+                data_var_masked = data_var[var_]*np.ones(n_select)
+            else:
+                data_var_masked = data_var[var_][data_mask[var_]].copy()
+        else:
+            data_measured_masked = np.append(data_measured_masked,data_measured[var_][data_mask[var_]])
+            if type(data_var[var_]) == float:
+                data_var_masked = np.append(data_var_masked,data_var[var_]*np.ones(n_select))
+            else:
+                data_var_masked = np.append(data_var_masked,data_var[var_][data_mask[var_]])
+                
+        i_start = i_end
+        print('Thinned out %s observations: %i -> %i' % (var_,len(data_measured[var_]),n_select))
+        
+    n_data = i_end
+    data_var_masked*=factor_inflate
+    return data_mask,data_indices,n_data,data_measured_masked,data_var_masked
+
+
+def plot_prior_post(param_f,param_a,param_names_all,i_iter,dir_figs=os.path.join(settings_run['dir_figs'],'params') ):
+    if not os.path.exists(dir_figs):
+        print('Creating folder to store parameter update figures: %s' % (dir_figs) )
+        os.mkdir(dir_figs)
+    c = 0
+    c2 = 0
+    n_param_max = 16*10 #max 10 plots
+    n_param = min(len(param_f),n_param_max)
+    n_figs = np.ceil(n_param/16).astype(int)
+
+    for i_ in np.arange(n_param):
+        if i_ % 16 == 0:
+            c = 0
+            fig,axes=plt.subplots(4,4,figsize=(8,7))
+        row_ = c//4
+        col_ = c%4
+
+        axes[row_,col_].plot(param_f[i_,:],np.zeros(param_f[i_,:].shape),'ko')
+        axes[row_,col_].plot(param_a[i_,:],np.zeros(param_a[i_,:].shape),'rx')
+        axes[row_,col_].set_title(param_names_all[i_])
+        c += 1
+        if c == 16 or i_ == n_param-1:
+            fig.suptitle('Iter %i -> %i' %(i_iter,i_iter+1))
+            fig.tight_layout()
+            fig.savefig(os.path.join(dir_figs,'params_%i.png'%(c2)) )
+            c2 += 1
+
+            
 def update_step_ESMDA(param_f,data_f,data_measured,data_var,alpha,i_iter):
     print('Calculating KG and performing parameter update...')
     assert data_f.shape[0] == len(data_measured)
-    n_data = data_f.shape[0]
+    n_data_ = data_f.shape[0]
     n_ensemble = data_f.shape[1]
     n_param = param_f.shape[0]
     
     # 3) construct covariance matrices based on ensemble of parameters and results (data)
-    C_D = data_var['SMAP']*sparse.eye(n_data)    
-    C_MD = np.zeros([n_param,n_data],dtype=np.float32)
-    C_DD = np.zeros([n_data,n_data],dtype=np.float32)
+    # C_D = data_var['SMAP']*sparse.eye(n_data) 
+    C_D = sparse.diags(data_var)
+    C_MD = np.zeros([n_param,n_data_],dtype=np.float32)
+    C_DD = np.zeros([n_data_,n_data_],dtype=np.float32)
     param_mean = param_f.mean(axis=1)
     data_mean = data_f.mean(axis=1)        
     param_delta = np.zeros([n_param,n_ensemble])
-    data_delta = np.zeros([n_data,n_ensemble])
+    data_delta = np.zeros([n_data_,n_ensemble])
     for i2 in range(n_ensemble):
         param_delta[:,i2] = param_f[:,i2] - param_mean
         data_delta[:,i2] = data_f[:,i2] - data_mean
@@ -246,7 +282,7 @@ def update_step_ESMDA(param_f,data_f,data_measured,data_var,alpha,i_iter):
     mean_mismatch_new = 0
     for i_real in range(n_ensemble):
 
-        z_d = np.random.normal(0,1,n_data)
+        z_d = np.random.normal(0,1,n_data_)
         data_perturbed = data_measured + np.sqrt(alpha[i_iter])*np.sqrt(C_D.diagonal())*z_d
 
         mismatch = data_perturbed - data_f[:,i_real]
@@ -261,13 +297,132 @@ def update_step_ESMDA(param_f,data_f,data_measured,data_var,alpha,i_iter):
     return param_a, mean_mismatch_new
 
 
+def update_step_ESMDA_loc(mat_M,mat_D,data_measured,data_var,alpha,i_iter,n_iter,ksi=.99):
+    """
+    Optimized version for many observations
+    Possibility to include localisation
+    
+    Based on appendix of Emerick (2016), j. of Petroleum Science and Engineering 
+    doi.org/10.1016/j.petrol.2016.01.029
+    """
+
+    def calculate_alphas(lambda_Wd_,n_iter):
+        """
+        Based on Rafiee and Reynolds, 2017 (Hankes regularization condition)
+        Calculate set of inflation factors
+        """
+        try:
+            from scipy.optimize import minimize_scalar
+            def f1(gamma,alpha_1,N_a):
+                    sum_ = 0
+                    for i in range(N_a):
+                        k= i+1
+                        if ( (gamma**(k-1)) * alpha_1) == 0:
+                            print(gamma,k,alpha_1)
+                        sum_ += (1/ ( (gamma**(k-1)) * alpha_1) )
+
+                    return (sum_ - 1)**2
+
+            rho = .5
+            alpha_1 = max((rho/(1-rho))*lambda_Wd_.mean()**2,n_iter)
+
+            res = minimize_scalar(f1,bounds=(0.001,0.999),bracket=(0.001,0.999),args=(alpha_1,n_iter))
+            gamma = res.x
+
+            alphas = [(gamma**k)*alpha_1 for k in np.arange(n_iter)]
+            print('Inflation factors (alpha) calculated:',alphas)
+        except:
+            print('Inflation factor (alpha) calculation failed, falling back to alpha=n_iter')
+            alphas = [n_iter for k in np.arange(n_iter)]
+
+        assert( np.sum(1/np.array(alphas))-1 < 1e-5)
+
+        return alphas
+
+    print('Calculating KG and performing parameter update...')
+    assert mat_D.shape[0] == len(data_measured)
+
+    n_data_ = mat_D.shape[0]
+    n_ensemble = mat_D.shape[1]
+    n_param = mat_M.shape[0]
+
+    C_D = sparse.diags(data_var)
+
+    del_M = (1/np.sqrt(n_ensemble-1))*(mat_M - mat_M.mean(axis=1)[:,np.newaxis])
+    del_D = (1/np.sqrt(n_ensemble-1))*(mat_D - mat_D.mean(axis=1)[:,np.newaxis])
+
+    S = sparse.diags(C_D.diagonal()**(1/2))
+    C_Dh = 1.*sparse.eye(n_data_)
+    Sinv = sparse.diags(1/S.diagonal()) #inverse of diagonal matrix: simply the reciprocal
+
+    Ud, lambda_Wd, Vdt = np.linalg.svd(Sinv.dot(del_D), full_matrices=False)
+    assert(np.all(lambda_Wd[:-1] > lambda_Wd[1:])) #assert that the eigenvalues are sorted
+
+    if alpha is None:
+        print('Calculating inflation factors alpha...')
+        alpha = calculate_alphas(lambda_Wd,n_iter)
+
+    cumsum_wr = np.cumsum(lambda_Wd) / np.sum(lambda_Wd)
+    Nr = max(len(lambda_Wd)//2, np.where(cumsum_wr<=ksi)[0][-1]) #take Nr most important singular values, retain at least half the original matrix size just in case
+
+    Ur = Ud[:,0:Nr]
+    Wr = sparse.diags(lambda_Wd[0:Nr])
+    Vrt = Vdt[0:Nr,0:Nr]
+    Ir = sparse.eye(Nr)
+    Wrinv = sparse.diags(1/Wr.diagonal()) 
+
+    mat_R = alpha[i_iter]*(Wrinv @ Ur.T @ C_Dh @ Ur @ Wrinv)
+
+    Zr, lambda_Hr, Zrt = np.linalg.svd(mat_R, full_matrices=False)
+    Hr = sparse.diags(lambda_Hr)
+
+    mat_X = Sinv @ Ur @ Wrinv @ Zr
+    mat_L = Ir + Hr
+    mat_Linv = sparse.diags(1/mat_L.diagonal()) 
+
+    mat_X1 = mat_Linv @ mat_X.T
+    mat_X2 = del_D.T @ mat_X
+    mat_X3 = mat_X2 @ mat_X1
+
+    # perturb observations, at the same time calculate the mismatch of the current forecast
+    mat_Dobs = np.zeros(mat_D.shape)
+    mean_mismatch_new = 0
+    for i_real in range(n_ensemble):
+        z_d = np.random.normal(0,1,n_data_)
+        mat_Dobs[:,i_real] = data_measured + np.sqrt(alpha[i_iter])*np.sqrt(C_D.diagonal())*z_d
+        mismatch = mat_Dobs[:,i_real] - mat_D[:,i_real]
+        mean_mismatch_new += np.sum(mismatch**2)
+    mean_mismatch_new /= n_ensemble
+    
+    # calculate updated (analysis) parameters
+    param_a = np.zeros(mat_M.shape)
+    for i in range(n_param):
+        rho_i = np.ones(n_data_) #1 where measurement/parameter locations match, 0 far away
+        K_i = del_M[i,:]@mat_X3
+        K_rho_i = K_i * rho_i
+        mat_X4 = K_rho_i @ (mat_Dobs - mat_D)
+        param_a[i,:] = mat_M[i,:] + mat_X4
+        
+    return param_a, mean_mismatch_new, alpha
+
+
 if __name__ == '__main__':
 
-    # which variables to assimilate. If uncertainties are assumed constant, prescribe
-    data_names = ['SMAP','FLX']
-    data_var = {'SMAP':0.15**2,
+    # which data to assimilate: 
+    data_names = settings_DA['data_names']
+    # If uncertainties are assumed constant, prescribe:
+    data_var = {'SMAP':0.04**2,
                 'FLX':None}
-
+    # possibility to only select a limited amount of observations using masks
+    data_nselect = {'SMAP':20000,
+                    'FLX':10000}
+    data_mask = {'SMAP':None, #initialize dict
+                 'FLX':None}
+    
+    prescribe_alpha = settings_DA['prescribe_alpha']
+    factor_inflate = settings_DA['factor_inflate']
+    ksi=settings_DA['cutoff_svd']
+    
     ### Unpack some of the settings into variables
     # Functions that are run to initialize the parameters to be assimilated. 
     # E.g. for spatial parameter fields, initialize the static fields (x,y,z) locations and the prior/uncertainty estimates
@@ -284,13 +439,15 @@ if __name__ == '__main__':
     dir_setup = settings_run['dir_setup']
     dir_template = settings_run['dir_template']
 
-
-    if n_iter > 1:
-        alpha = n_iter*np.ones(n_iter)
-    elif n_iter == 8:
-        alpha = np.array([20.719,19.0,17.,16.,15.,9.,5.,2.5])    
+    if prescribe_alpha:
+        if n_iter > 1:
+            alpha = n_iter*np.ones(n_iter)
+        elif n_iter == 8:
+            alpha = np.array([20.719,19.0,17.,16.,15.,9.,5.,2.5])    
+        else:
+            alpha = [1.]
     else:
-        alpha = [1.]
+        alpha = None
 
     '''
      1) Copy the folder template to the setup location if the destination does not exist
@@ -390,7 +547,7 @@ if __name__ == '__main__':
 
             print('n_ensemble: %i' % n_ensemble)
             # Aggregrate all parameter values into param_f
-            param_f = read_parameters(n_ensemble,settings_gen,settings_run)
+            param_f,param_names_all = read_parameters(n_ensemble,settings_gen,settings_run)
             n_param = len(param_f)
             print('Amount of parameters to assimilate: %i' % n_param)
 
@@ -400,51 +557,61 @@ if __name__ == '__main__':
             
             n_ensemble, reread_required = check_for_success(dir_iter,dir_DA,dir_settings,date_results_iter,n_ensemble)
             if reread_required:
-                param_f = read_parameters(n_ensemble,settings_gen,settings_run)
+                param_f,_ = read_parameters(n_ensemble,settings_gen,settings_run)
  
-            # Measurement operator: map state vector onto measurement space
-            # i.e. get the TSMP values at the SMAP times/locations
-            operator = operator_clm_SMAP(settings_DA['file_lsm'],settings_DA['file_corner'],settings_DA['folder_SMAP'],ignore_rivers=False)
-            # 1) get the observed quantities, and corresponding lon/lat/time    
-            data_measured = operator.get_measurements(date_results_iter,date_DA_start=date_start_sim)
+            # Measurement operators: map state vector onto measurement space
+            # i.e. get the TSMP values at the SMAP or FLUXNET times/locations
+            operator = {}
+            data_measured = {}
 
-            # Operators for validation data; FLUXNET
-            operator_FLX = operator_clm_FLX(settings_DA['file_lsm'],settings_DA['file_corner'],settings_DA['folder_FLX'],ignore_rivers=False)
-            data_measured_FLX = operator_FLX.get_measurements(date_results_iter,date_DA_start=date_start_sim)
-            
-            ### TEMPORARY: reduce number of measurements
-            n_select = 30000
-            if len(data_measured) < n_select:
-                mask_measured = np.ones(len(data_measured),dtype=bool)
-            else:
-                frac_select = min((n_select / len(data_measured)),.99)
-                mask_measured = np.random.choice([0,1],size=len(data_measured),p=[1-frac_select,frac_select]).astype(bool) 
-            data_measured=data_measured[mask_measured]
+            # Operator for SMAP
+            operator['SMAP'] = operator_clm_SMAP(settings_DA['file_lsm'],settings_DA['file_corner'],settings_DA['folder_SMAP'],ignore_rivers=False)
+            data_measured['SMAP'],_ = operator['SMAP'].get_measurements(date_results_iter,date_DA_start=date_start_sim)
 
-            n_data = len(data_measured)
+            # Operator for FLUXNET
+            operator['FLX'] = operator_clm_FLX(settings_DA['file_lsm'],settings_DA['file_corner'],settings_DA['folder_FLX'],ignore_rivers=False)
+            data_measured['FLX'],data_var['FLX'] = operator['FLX'].get_measurements(date_results_iter,date_DA_start=date_start_sim)
+
+            # mask observations to required amount given in data_nselect
+            data_mask,data_indices,n_data,data_measured_masked,data_var_masked = mask_observations(data_names,data_measured,data_var,data_nselect,data_mask,factor_inflate=factor_inflate)
 
             # get most likely parameter output, to track if the iterations are improving
-            data_ml = operator.interpolate_model_results(0,settings_run,indices_z=[0,1],var='SOILLIQ')[mask_measured]
-            operator.plot_results(i_iter,0,settings_run,indices_z=0,var='SOILLIQ',n_plots=12,dir_figs=settings_run['dir_figs'])
-            operator_FLX.interpolate_model_results(0,settings_run)
-            operator_FLX.plot_results(i_iter,0,settings_run,dir_figs=os.path.join(settings_run['dir_figs'],'FLX'))
+            t0 = time.time()
+            _ = operator['SMAP'].interpolate_model_results(0,settings_run,indices_z=[0,1],var='SOILLIQ')#[data_mask['SMAP']]
+            operator['SMAP'].plot_results(i_iter,0,settings_run,indices_z=0,var='SOILLIQ',n_plots=12,dir_figs=settings_run['dir_figs'])
+            _ = operator['FLX'].interpolate_model_results(0,settings_run)#[data_mask['FLX']]
+            operator['FLX'].plot_results(i_iter,0,settings_run,dir_figs=os.path.join(settings_run['dir_figs'],'FLX'))
+            t1 = time.time()
+            print('%f seconds for interpolating/plotting one ensemble member'%(t1-t0))
             
             # 2) get the corresponding ensemble measurements ("forecast")
+            print('Interpolating all ensemble members...')
+            t0 = time.time()
             data_f = np.zeros([n_data,n_ensemble])
-            for i_real in np.arange(1,n_ensemble+1):    
-                data_f[:,i_real-1] = operator.interpolate_model_results(i_real,settings_run,indices_z=[0,1],var='SOILLIQ')[mask_measured]
-                operator.plot_results(i_iter,i_real,settings_run,indices_z=0,var='SOILLIQ',n_plots=4)
-
-            # plot_results_ml(operator,settings_gen,settings_run)
-
-
-            param_a,mean_mismatch_new = update_step_ESMDA(param_f,data_f,data_measured,data_var,alpha,i_iter)
-         
+            for i_real in np.arange(1,n_ensemble+1):   
+                print('%i/%i' % (i_real,n_ensemble))
+                for var_ in data_names:
+                    data_f[data_indices[var_][0]:data_indices[var_][1],i_real-1] = operator[var_].interpolate_model_results(i_real,settings_run)[data_mask[var_]]
+                if 'SMAP' in data_names:
+                    operator['SMAP'].plot_results(i_iter,i_real,settings_run,indices_z=0,var='SOILLIQ',n_plots=4)
+            t1 = time.time()
+            print('%f seconds for interpolating all ensemble members'%(t1-t0))
+            
+            if 'FLX' in data_names:
+                operator['FLX'].plot_all_results(i_iter,settings_run,dir_figs=os.path.join(settings_run['dir_figs'],'FLX'))
+                
+            print('Performing Kalman update...')
+            t0 = time.time()
+            param_a,mean_mismatch_new,alpha = update_step_ESMDA_loc(param_f,data_f,data_measured_masked,data_var_masked,alpha,i_iter,n_iter,ksi=ksi)
+            t1 = time.time()
+            print('%f seconds for Kalman update'%(t1-t0))
+        
             write_parameters(param_a,settings_gen,settings_run)
    
             mismatch_iter.append(mean_mismatch_new)
-            print('Mismatch: %3.3f -> %3.3f' % (mismatch_iter[-2],mismatch_iter[-1]))
-
+            print('Mismatch (old forecast vs. new forecast): %3.3f -> %3.3f' % (mismatch_iter[-2],mismatch_iter[-1]))
+            
+            plot_prior_post(param_f,param_a,param_names_all,i_iter,dir_figs=os.path.join(settings_run['dir_figs'],'params'))
         
         
     # last iteration: only compute result of most likely parameters,
@@ -480,23 +647,22 @@ if __name__ == '__main__':
     for i_real in np.arange(0,2):
         realize_parameters(i_real,settings_gen,settings_run,init=init_list[i_real],run_prior=run_prior[i_real])
 
-
-
     with Pool(processes=2) as pool:
         pool.starmap(setup_submit_wait, zip(np.arange(0,2),repeat(settings_run),repeat(settings_clm),
                                            repeat(settings_pfl),repeat(settings_sbatch),repeat(date_results_iter)) )
 
-
-    operator = operator_clm_SMAP(settings_DA['file_lsm'],settings_DA['file_corner'],settings_DA['folder_SMAP'],ignore_rivers=False)
-    data_measured = operator.get_measurements(date_results_iter,date_DA_start=date_start_sim)
-    operator_FLX = operator_clm_FLX(settings_DA['file_lsm'],settings_DA['file_corner'],settings_DA['folder_FLX'],ignore_rivers=False)
-    data_measured_FLX = operator_FLX.get_measurements(date_results_iter,date_DA_start=date_start_sim)
+    operator = {}
+    data_measured = {}
+    operator['SMAP'] = operator_clm_SMAP(settings_DA['file_lsm'],settings_DA['file_corner'],settings_DA['folder_SMAP'],ignore_rivers=False)
+    _ = operator['SMAP'].get_measurements(date_results_iter,date_DA_start=date_start_sim)
+    operator['FLX'] = operator_clm_FLX(settings_DA['file_lsm'],settings_DA['file_corner'],settings_DA['folder_FLX'],ignore_rivers=False)
+    _ = operator['FLX'].get_measurements(date_results_iter,date_DA_start=date_start_sim)
 
     for i_real in np.arange(0,2):
-        _ = operator.interpolate_model_results(i_real,settings_run,indices_z=[0,1],var='SOILLIQ')
-        operator.plot_results(i_iter,i_real,settings_run,indices_z=0,var='SOILLIQ',n_plots=24*4)
-        operator_FLX.interpolate_model_results(i_real,settings_run)
-        operator_FLX.plot_results(i_iter,i_real,settings_run,dir_figs=os.path.join(settings_run['dir_figs'],'FLX'))
+        _ = operator['SMAP'].interpolate_model_results(i_real,settings_run,indices_z=[0,1],var='SOILLIQ')
+        operator['SMAP'].plot_results(i_iter,i_real,settings_run,indices_z=0,var='SOILLIQ',n_plots=24*4)
+        _ = operator['FLX'].interpolate_model_results(i_real,settings_run)
+        operator['FLX'].plot_results(i_iter,i_real,settings_run,dir_figs=os.path.join(settings_run['dir_figs'],'FLX'))
             
       
     print('---------------------------------------')
