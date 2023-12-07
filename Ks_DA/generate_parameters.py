@@ -956,7 +956,7 @@ def generate_medlyn_slope(i_real,settings_gen,settings_run):
     
     dir_in = settings_run['dir_DA']
     values = np.load(os.path.join(dir_in,'medlyn_slope.param.%3.3i.%3.3i.%3.3i.npy'%(settings_gen['i_date'],settings_gen['i_iter'],i_real) ))
-    values[values<.1] = .1 #slope needs to be positive, set to low value when necessary
+    values[values<.3] = .3 #slope needs to be positive, set to low value when necessary
     
     dir_setup = settings_run['dir_setup']
     dir_real = os.path.join(settings_run['dir_iter'],'R%3.3i'%i_real)
@@ -978,7 +978,8 @@ def generate_medlyn_slope(i_real,settings_gen,settings_run):
 def generate_medlyn_intercept(i_real,settings_gen,settings_run):
     
     dir_in = settings_run['dir_DA']
-    values = np.load(os.path.join(dir_in,'medlyn_intercept.param.%3.3i.%3.3i.%3.3i.npy'%(settings_gen['i_date'],settings_gen['i_iter'],i_real) ))
+    values_log10 = np.load(os.path.join(dir_in,'medlyn_intercept.param.%3.3i.%3.3i.%3.3i.npy'%(settings_gen['i_date'],settings_gen['i_iter'],i_real) ))
+    values = 10**values_log10
     values[values<.1] = .1 #negative intercept -> negative stomatal conductance, set to low value instead
     
     dir_setup = settings_run['dir_setup']
@@ -1225,6 +1226,47 @@ def generate_thetas_intercept(i_real,settings_gen,settings_run):
     data.close()
     shutil.move(file_out_tmp,file_out)  
     
+def generate_mineral_hydraulic(i_real,settings_gen,settings_run):
+    dir_in = settings_run['dir_DA']
+    values = np.load(os.path.join(dir_in,'mineral_hydraulic.param.%3.3i.%3.3i.%3.3i.npy'%(settings_gen['i_date'],settings_gen['i_iter'],i_real) ))
+    # b slope/intercept, [0 , 1]
+    # psis s/i,          [2,  3]
+    # ks s/i,            [4,  5]
+    # thetas s/i         [6,  7]      
+    if values[0] < 0.01:
+        print('Warning: b_slope moved towards negative values')
+        values[0] = 0.01
+    if values[7] < 0.01:
+        print('Warning: thetas intercept moved towards negative values')
+        values[7] = 0.01
+    if values[7] > .99:
+        print('Warning: thetas intercept moved towards values >1')
+        values[7] = .99
+    
+    dir_setup = settings_run['dir_setup']
+    dir_real = os.path.join(settings_run['dir_iter'],'R%3.3i'%i_real)
+    
+    file_in = os.path.join(dir_setup,'input_clm/clm5_params.c171117.nc')
+    file_out = os.path.join(dir_real,'clm5_params.c171117.nc') 
+    file_out_tmp = file_out + '.tmp' 
+    
+    if os.path.exists(file_out): #the param file has been adjusted already -> open it again
+        file_in = file_out
+    
+    data = xr.load_dataset(file_in)
+    data['b_slope'] = values[0]
+    data['b_intercept'] = values[1]
+    data['log_psis_slope'] = values[2]
+    data['log_psis_intercept'] = values[3]
+    data['log_ks_slope'] = values[4]
+    data['log_ks_intercept'] = values[5]
+    data['thetas_slope'] = values[6]
+    data['thetas_intercept'] = values[7]
+    
+    data.to_netcdf(file_out_tmp)
+    data.close()
+    shutil.move(file_out_tmp,file_out)   
+    
 def generate_orgmax(i_real,settings_gen,settings_run):
     
     dir_in = settings_run['dir_DA']
@@ -1294,6 +1336,55 @@ def generate_om_hydraulic(i_real,settings_gen,settings_run):
     data.to_netcdf(file_out_tmp)
     data.close()
     shutil.move(file_out_tmp,file_out)    
+    
+    
+def generate_h2o_canopy_max(i_real,settings_gen,settings_run):
+    
+    dir_in = settings_run['dir_DA']
+    value_log10 = np.load(os.path.join(dir_in,'h2o_canopy_max.param.%3.3i.%3.3i.%3.3i.npy'%(settings_gen['i_date'],settings_gen['i_iter'],i_real) ))[0]
+    value = 10**value_log10
+    
+    dir_setup = settings_run['dir_setup']
+    dir_real = os.path.join(settings_run['dir_iter'],'R%3.3i'%i_real)
+    
+    file_in = os.path.join(dir_setup,'input_clm/clm5_params.c171117.nc')
+    file_out = os.path.join(dir_real,'clm5_params.c171117.nc') 
+    file_out_tmp = file_out + '.tmp' 
+    
+    if os.path.exists(file_out): #the param file has been adjusted already -> open it again
+        file_in = file_out
+    
+    data = xr.load_dataset(file_in)
+    data['h2o_canopy_max'] = value
+    
+    data.to_netcdf(file_out_tmp)
+    data.close()
+    shutil.move(file_out_tmp,file_out)  
+    
+def generate_kmax(i_real,settings_gen,settings_run):
+    
+    dir_in = settings_run['dir_DA']
+    values_log10 = np.load(os.path.join(dir_in,'kmax.param.%3.3i.%3.3i.%3.3i.npy'%(settings_gen['i_date'],settings_gen['i_iter'],i_real) ))
+    values = 10**values_log10
+    
+    dir_setup = settings_run['dir_setup']
+    dir_real = os.path.join(settings_run['dir_iter'],'R%3.3i'%i_real)
+    
+    file_in = os.path.join(dir_setup,'input_clm/clm5_params.c171117.nc')
+    file_out = os.path.join(dir_real,'clm5_params.c171117.nc') 
+    file_out_tmp = file_out + '.tmp' 
+    
+    if os.path.exists(file_out): #the param file has been adjusted already -> open it again
+        file_in = file_out
+    
+    data = xr.load_dataset(file_in)
+    
+    for i_pft in np.arange(1,len(values)+1):
+        data.kmax[:,i_pft] = values[i_pft-1]
+    
+    data.to_netcdf(file_out_tmp)
+    data.close()
+    shutil.move(file_out_tmp,file_out)   
     
 if __name__ == '__main__':
     

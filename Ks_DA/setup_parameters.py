@@ -584,27 +584,38 @@ def setup_Ks_tensor(settings_setup,settings_run):
 
 def setup_medlyn_slope(settings_setup,settings_run):
     dir_out = settings_run['dir_DA']
-    vals_mean = np.array([2.3499999 , 2.3499999 , 2.3499999 , 4.11999989,
-                       4.11999989, 4.44999981, 4.44999981, 4.44999981, 4.69999981,
-                       4.69999981, 4.69999981, 2.22000003, 5.25      , 1.62      ,
-                       5.78999996, 5.78999996])
+    # vals_mean = np.array([2.3499999 , 2.3499999 , 2.3499999 , 4.11999989,
+    #                    4.11999989, 4.44999981, 4.44999981, 4.44999981, 4.69999981,
+    #                    4.69999981, 4.69999981, 2.22000003, 5.25      , 1.62      ,
+    #                    5.78999996, 5.78999996])
+    # vals_std = 0.5*np.ones(len(vals_mean)) 
+    vals_min = np.array([1.29, 1.29, 1.29, 1.63, 1.63, 3.19, 3.19, 3.19, 2.25, 2.25, 2.25, 1.77, 3.05, 0.53, 3.46, 0.53]) #Dagon et al. (2020)
+    vals_max = np.array([4.70, 4.70, 4.70, 4.59, 4.59, 5.11, 5.11, 5.11, 9.27, 9.27, 9.27, 2.66, 9.45, 4.03, 7.70, 4.03])
+    n_sigma = 2 #define the interal between min and max as the 95% CI
+    vals_mean = .5*(vals_min+vals_max)
+    vals_std = (vals_mean-vals_min)/n_sigma
 
-    vals_std = 0.5*np.ones(len(vals_mean)) 
     np.save(os.path.join(dir_out,'medlyn_slope.param.000.000.prior'),np.array([vals_mean,vals_std]).T)
     
     
 def setup_medlyn_intercept(settings_setup,settings_run):
     dir_out = settings_run['dir_DA']
-    vals_mean = 100.*np.ones(16)
-    vals_std = 50*np.ones(len(vals_mean)) 
+    # vals_mean = 100.*np.ones(16)
+    # vals_std = 50*np.ones(len(vals_mean)) 
+    vals_mean = np.log10(100.*np.ones(16))
+    # vals_std = .5*np.ones(len(vals_mean)) # cover 1 OM in the CI (+-)
+    vals_std = np.log10(1.2)*np.ones(len(vals_mean))
     np.save(os.path.join(dir_out,'medlyn_intercept.param.000.000.prior'),np.array([vals_mean,vals_std]).T)
     
    
 def setup_fff(settings_setup,settings_run):
     dir_out = settings_run['dir_DA']
-    vals_mean = np.log10(.5)
-    vals_std = .5 #2 std: 1 order of magnitude, see Yan et al. (2023)
-    np.save(os.path.join(dir_out,'fff.param.000.000.prior'),np.array([[vals_mean],[vals_std]]).T)
+    val_min = np.log10(0.02) #Dagon et al. (2020)
+    val_max = np.log10(5.0)
+    n_sigma = 2 #define the interal between min and max as the 95% CI
+    val_mean = .5*(val_min+val_max)
+    val_std = (val_mean-val_min)/n_sigma
+    np.save(os.path.join(dir_out,'fff.param.000.000.prior'),np.array([[val_mean],[val_std]]).T)
      
 def setup_b_slope(settings_setup,settings_run):
     dir_out = settings_run['dir_DA']
@@ -654,6 +665,19 @@ def setup_thetas_intercept(settings_setup,settings_run):
     vals_std = 0.012 #see test_hydraulic_relations.ipynb
     np.save(os.path.join(dir_out,'thetas_intercept.param.000.000.prior'),np.array([[vals_mean],[vals_std]]).T)
     
+def setup_mineral_hydraulic(settings_setup,settings_run):
+    dir_out = settings_run['dir_DA']
+    # b slope/interc, psis s/i, ks s/i, thetas s/i
+    vals_mean = np.array([0.175,2.603,
+                          -0.013,1.873,
+                          0.015,-0.813,
+                          -0.00123,0.489])
+    vals_std =  np.array([0.012,0.236,
+                          0.002,0.107,
+                          0.002,0.102,
+                          2.328e-4,0.012])
+    np.save(os.path.join(dir_out,'mineral_hydraulic.param.000.000.prior'),np.array([vals_mean,vals_std]).T)
+    
 def setup_orgmax(settings_setup,settings_run):
     dir_out = settings_run['dir_DA']
     vals_mean = 130.
@@ -679,7 +703,27 @@ def setup_om_hydraulic(settings_setup,settings_run):
     
     np.save(os.path.join(dir_out,'om_hydraulic.param.000.000.prior'),np.array([vals_mean,vals_std]).T)
         
+def setup_h2o_canopy_max(settings_setup,settings_run):
+    dir_out = settings_run['dir_DA']
+    val_min = np.log10(0.05) #Dagon et al. (2020)
+    val_max = np.log10(2.0)
+    n_sigma = 2 #define the interal between min and max as the 95% CI
+    val_mean = .5*(val_min+val_max)
+    val_std = (val_mean-val_min)/n_sigma
+    np.save(os.path.join(dir_out,'h2o_canopy_max.param.000.000.prior'),np.array([[val_mean],[val_std]]).T)
+  
+def setup_kmax(settings_setup,settings_run):
+    dir_out = settings_run['dir_DA']
+    val_min = np.log10(2e-9) #Dagon et al. (2020)
+    val_max = np.log10(3.8e-8)
+    n_sigma = 2 #define the interal between min and max as the 95% CI
+    val_mean = .5*(val_min+val_max)
+    val_std = (val_mean-val_min)/n_sigma
+    vals_mean = val_mean*np.ones(16)
+    vals_std = val_std*np.ones(len(vals_mean)) 
+    np.save(os.path.join(dir_out,'kmax.param.000.000.prior'),np.array([vals_mean,vals_std]).T)
     
+
 if __name__ == '__main__':
     
     file_indi = '/p/project/cjibg36/kaandorp2/TSMP_patched/tsmp_cordex_111x108/input_pf/EUR-11_TSMP_FZJ-IBG3_CLMPFLDomain_111x108_INDICATOR_regridded_rescaled_SoilGrids250-v2017_BGR3_alv.sa'
