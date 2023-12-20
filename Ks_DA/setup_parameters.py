@@ -476,6 +476,16 @@ def setup_sandfrac_anom(settings_gen,settings_run):
     ### write parameter data: anomaly of alpha (0) and std
     np.save(os.path.join(dir_out,'sandfrac_anom.param.000.000.prior'),np.array([Y_train,Y_sigma]).T)
 
+    ### Added for localization: lon/lat values of the parameter
+    lons = xr.open_dataset(file_surface).LONGXY.values
+    lats = xr.open_dataset(file_surface).LATIXY.values
+    lons_sample = lons[np.ix_(i_c_lat,i_c_lon)][mask_c_land[0,:,:]]
+    lons_sample[lons_sample > 180] -= 360
+    lats_sample = lats[np.ix_(i_c_lat,i_c_lon)][mask_c_land[0,:,:]]
+
+    latlon = np.array([lats_sample,lons_sample]).T
+    np.save(os.path.join(dir_out,'sandfrac_anom.latlon'),latlon)
+    
     
 def setup_clayfrac_anom(settings_gen,settings_run):
     file_surface = os.path.join(settings_gen['dir_clm_surf'],settings_gen['file_clm_surf'])
@@ -524,7 +534,16 @@ def setup_clayfrac_anom(settings_gen,settings_run):
 
     ### write parameter data: anomaly of alpha (0) and std
     np.save(os.path.join(dir_out,'clayfrac_anom.param.000.000.prior'),np.array([Y_train,Y_sigma]).T)
+    
+    ### Added for localization: lon/lat values of the parameter
+    lons = xr.open_dataset(file_surface).LONGXY.values
+    lats = xr.open_dataset(file_surface).LATIXY.values
+    lons_sample = lons[np.ix_(i_c_lat,i_c_lon)][mask_c_land[0,:,:]]
+    lons_sample[lons_sample > 180] -= 360
+    lats_sample = lats[np.ix_(i_c_lat,i_c_lon)][mask_c_land[0,:,:]]
 
+    latlon = np.array([lats_sample,lons_sample]).T
+    np.save(os.path.join(dir_out,'clayfrac_anom.latlon'),latlon)
 
 def setup_orgfrac_anom(settings_gen,settings_run):
     file_surface = os.path.join(settings_gen['dir_clm_surf'],settings_gen['file_clm_surf'])
@@ -573,7 +592,16 @@ def setup_orgfrac_anom(settings_gen,settings_run):
 
     ### write parameter data: anomaly of alpha (0) and std
     np.save(os.path.join(dir_out,'orgfrac_anom.param.000.000.prior'),np.array([Y_train,Y_sigma]).T)
+  
+    ### Added for localization: lon/lat values of the parameter
+    lons = xr.open_dataset(file_surface).LONGXY.values
+    lats = xr.open_dataset(file_surface).LATIXY.values
+    lons_sample = lons[np.ix_(i_c_lat,i_c_lon)][mask_c_land[0,:,:]]
+    lons_sample[lons_sample > 180] -= 360
+    lats_sample = lats[np.ix_(i_c_lat,i_c_lon)][mask_c_land[0,:,:]]
 
+    latlon = np.array([lats_sample,lons_sample]).T
+    np.save(os.path.join(dir_out,'orgfrac_anom.latlon'),latlon)
     
 def setup_Ks_tensor(settings_setup,settings_run):
     dir_out = settings_run['dir_DA']
@@ -723,7 +751,13 @@ def setup_kmax(settings_setup,settings_run):
     vals_std = val_std*np.ones(len(vals_mean)) 
     np.save(os.path.join(dir_out,'kmax.param.000.000.prior'),np.array([vals_mean,vals_std]).T)
     
-
+def setup_luna(settings_setup,settings_run):
+    # photosynthesis parameters for the luna module in CLM5
+    dir_out = settings_run['dir_DA']
+    vals_mean = np.log10([0.0311,0.1745,0.8054,6.0999]) #Jmaxb0 Jmaxb1 Wc2Wjb0 relhExp
+    vals_std = np.log10(1.1)*np.ones_like(vals_mean) #2 sigma: +- 20%
+    np.save(os.path.join(dir_out,'luna.param.000.000.prior'),np.array([vals_mean,vals_std]).T)
+    
 if __name__ == '__main__':
     
     file_indi = '/p/project/cjibg36/kaandorp2/TSMP_patched/tsmp_cordex_111x108/input_pf/EUR-11_TSMP_FZJ-IBG3_CLMPFLDomain_111x108_INDICATOR_regridded_rescaled_SoilGrids250-v2017_BGR3_alv.sa'

@@ -14,7 +14,7 @@ from sloth.IO import readSa, writeSa
 
 
 def generate_anomaly_field(X_train,Y_train,data_indi,mode='ml',
-                           shape_out=None,mask_land=None,length_scale=30,
+                           shape_out=None,mask_land=None,length_scale=30,length_scale_bounds='fixed',
                            vary_depth=True,depth_setting='PFL'):
     """
     Generate anomaly field using Gaussian Process Regression
@@ -43,7 +43,7 @@ def generate_anomaly_field(X_train,Y_train,data_indi,mode='ml',
 
         return gprs_
 
-    kernel = 1.0 * Matern(length_scale=length_scale,nu=1.5,length_scale_bounds='fixed')
+    kernel = 1.0 * Matern(length_scale=length_scale,nu=1.5,length_scale_bounds=length_scale_bounds)
 
     if depth_setting == 'PFL':
         indi_dz = 2*np.array([9.0,7.5,5.0,5.0,2.0,0.5,0.35,0.25,0.15,0.10,0.065,0.035,0.025,0.015,0.01])
@@ -75,7 +75,7 @@ def generate_anomaly_field(X_train,Y_train,data_indi,mode='ml',
         if mask_land is None:     
             mask_land = (data_indi[i_layer,:] < 20)
 
-        print('Generating anomaly field for layer %i' % i_layer,flush=True)
+        # print('Generating anomaly field for layer %i' % i_layer,flush=True)
         X_test = np.array([X[0][mask_land],
                         X[1][mask_land]]).T
 
@@ -714,7 +714,8 @@ def generate_sandfrac_anom(i_real,settings_gen,settings_run):
         
     mode = 'rnd'
     length_scale = settings_gen['texture_anom_l']
-
+    length_scale_bounds = settings_gen['texture_anom_l_bounds']
+    
     plot = settings_gen['texture_plot']
     folder_figs = os.path.join(dir_real,'figures') 
 
@@ -736,6 +737,7 @@ def generate_sandfrac_anom(i_real,settings_gen,settings_run):
 
     anom_field = generate_anomaly_field(X_train,Y_train,data_texture,mode='ml',
                                         shape_out=data_texture.shape,mask_land=mask_land,length_scale=length_scale,
+                                        length_scale_bounds=length_scale_bounds,
                                         vary_depth=vary_depth,depth_setting='eCLM')
     anom_field[:,~mask_land]=0
 
@@ -796,6 +798,7 @@ def generate_clayfrac_anom(i_real,settings_gen,settings_run):
         
     mode = 'rnd'
     length_scale = settings_gen['texture_anom_l']
+    length_scale_bounds = settings_gen['texture_anom_l_bounds']
 
     plot = settings_gen['texture_plot']
     folder_figs = os.path.join(dir_real,'figures') 
@@ -818,6 +821,7 @@ def generate_clayfrac_anom(i_real,settings_gen,settings_run):
 
     anom_field = generate_anomaly_field(X_train,Y_train,data_texture,mode='ml',
                                         shape_out=data_texture.shape,mask_land=mask_land,length_scale=length_scale,
+                                        length_scale_bounds=length_scale_bounds,
                                         vary_depth=vary_depth,depth_setting='eCLM')
     anom_field[:,~mask_land]=0
 
@@ -877,7 +881,8 @@ def generate_orgfrac_anom(i_real,settings_gen,settings_run):
         
     mode = 'rnd'
     length_scale = settings_gen['texture_anom_l']
-
+    length_scale_bounds = settings_gen['texture_anom_l_bounds']
+    
     plot = settings_gen['texture_plot']
     folder_figs = os.path.join(dir_real,'figures') 
 
@@ -900,6 +905,7 @@ def generate_orgfrac_anom(i_real,settings_gen,settings_run):
 
     anom_field = generate_anomaly_field(X_train,Y_train,data_texture,mode='ml',
                                         shape_out=data_texture.shape,mask_land=mask_land,length_scale=length_scale,
+                                        length_scale_bounds=length_scale_bounds,
                                         vary_depth=vary_depth,depth_setting='eCLM')
     anom_field[:,~mask_land]=0
 
@@ -1385,6 +1391,35 @@ def generate_kmax(i_real,settings_gen,settings_run):
     data.to_netcdf(file_out_tmp)
     data.close()
     shutil.move(file_out_tmp,file_out)   
+    
+    
+def generate_luna(i_real,settings_gen,settings_run):
+    
+    dir_in = settings_run['dir_DA']
+    values_log10 = np.load(os.path.join(dir_in,'luna.param.%3.3i.%3.3i.%3.3i.npy'%(settings_gen['i_date'],settings_gen['i_iter'],i_real) ))
+    values = 10**values_log10
+    
+    dir_setup = settings_run['dir_setup']
+    dir_real = os.path.join(settings_run['dir_iter'],'R%3.3i'%i_real)
+    
+    file_in = os.path.join(dir_setup,'input_clm/clm5_params.c171117.nc')
+    file_out = os.path.join(dir_real,'clm5_params.c171117.nc') 
+    file_out_tmp = file_out + '.tmp' 
+    
+    if os.path.exists(file_out): #the param file has been adjusted already -> open it again
+        file_in = file_out
+    
+    data = xr.load_dataset(file_in)
+    
+    data['Jmaxb0'] = values[0]
+    data['Jmaxb1'] = values[1]
+    data['Wc2Wjb0'] = values[2]
+    data['relhExp'] = values[3]
+    
+    data.to_netcdf(file_out_tmp)
+    data.close()
+    shutil.move(file_out_tmp,file_out)   
+    
     
 if __name__ == '__main__':
     

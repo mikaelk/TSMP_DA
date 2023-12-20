@@ -86,7 +86,7 @@ def adjust_eclm_files(settings_run,dir_run,dir_real,settings_clm):
     all_clm_parameters = ['fff','orgmax','medlyn_slope','medlyn_intercept',
                   'b_slope', 'b_intercept', 'log_psis_slope', 'log_psis_intercept', 
                   'log_ks_slope', 'log_ks_intercept', 'thetas_slope', 'thetas_intercept',
-                         'om_hydraulic','om_thermal','h2o_canopy_max','kmax', 'mineral_hydraulic']
+                         'om_hydraulic','om_thermal','h2o_canopy_max','kmax', 'mineral_hydraulic','luna']
     filename_param = 'clm5_params.c171117.nc'
     if any(i in all_clm_parameters for i in settings_clm['param_names']):
         file_param = os.path.join(dir_real,filename_param)

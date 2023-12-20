@@ -91,11 +91,12 @@ class operator_clm_SMAP:
         return y_out
         
     def get_measurements(self,date_results_iter,date_DA_start=datetime(1900,1,1),date_DA_end=datetime(2200,1,1),
-                         mode='pm',qual_level=1):
+                         mode='pm',qual_level=1,return_latlon=False,return_date=False,max_deviation_time=timedelta(days=1)):
         self.lons_out = {}
         self.lats_out = {}
         self.sm_out = {}
-
+        array_dates = np.array([])
+        
         for date_results in date_results_iter:
             for date_ in date_results[1:]:
 
@@ -109,13 +110,14 @@ class operator_clm_SMAP:
                     # 3) for the given model date (date_) get the corresponding SMAP data
                     i_closest = np.argmin(np.abs(pd.to_datetime(dates_SMAP) - date_))
                     diff_days = abs(dates_SMAP[i_closest] - date_)
-                    if diff_days > timedelta(days=1):
+                    if diff_days > max_deviation_time:
                         print('Measurement and model output differ more than a day, SMAP: %s, TSMP: %s'%(dates_SMAP[i_closest],date_))
                         # This happens e.g. when not every day has a measurement
                     else:
                         file_SMAP = files_SMAP[i_closest]
                         data_SMAP_am, data_SMAP_pm = read_SMAP(file_SMAP)
-                        
+                        # print(date_,file_SMAP)
+
                         if mode == 'am':
                             # 4) select valid datapoints where the soil moisture and location are given
                             mask_data_valid = ~np.isnan(data_SMAP_am.soil_moisture) & ~np.isnan(data_SMAP_am.longitude) 
@@ -146,7 +148,13 @@ class operator_clm_SMAP:
                         self.lons_out[date_] = lons[mask_SMAP_lsm]
                         self.lats_out[date_] = lats[mask_SMAP_lsm]
                         self.sm_out[date_] = sm[mask_SMAP_lsm]
-        return self.flatten_y(self.sm_out), None #return measured values and their uncertainties if available
+                        array_dates = np.append(array_dates, np.array([date_ for i in range(mask_SMAP_lsm.sum())]))
+        if return_latlon and not return_date:
+            return self.flatten_y(self.sm_out), None, np.array([self.flatten_y(self.lats_out), self.flatten_y(self.lons_out)]).T
+        elif return_latlon and return_date:
+            return self.flatten_y(self.sm_out), None, np.array([self.flatten_y(self.lats_out), self.flatten_y(self.lons_out)]).T, array_dates
+        else:
+            return self.flatten_y(self.sm_out), None #return measured values and their uncertainties if available
                 
     def interpolate_model_results(self,i_real,settings_run,indices_z=[0,1],var='SOILLIQ',history_stream='h0'):
         self.data_TSMP_i = {}
@@ -230,6 +238,24 @@ class operator_clm_SMAP:
         else:
             layer_plot = 0
             
+            
+        # correlation of all measurements
+        x_all = self.flatten_y(self.data_TSMP_i)
+        y_all = self.flatten_y(self.sm_out)
+        min_ = min(min(x_all),min(y_all))
+        max_ = max(max(x_all),max(y_all))
+        R = pearsonr(x_all,y_all)[0]
+        rmse = np.sqrt(np.mean((x_all-y_all)**2))
+        bias = np.mean(y_all-x_all)        
+
+        plt.figure(figsize=(5,5))
+        plt.plot(x_all,y_all,'o',alpha=.7,markersize=3)
+        plt.plot([min_,max_],[min_,max_],'k:')
+        plt.xlabel('Modelled soil moisture')
+        plt.ylabel('SMAP soil moisture')
+        plt.title('Correlation all times, \nR=%3.3f, RMSE=%3.2e, bias=%3.3f' % (R,rmse,bias))
+        plt.savefig(os.path.join(dir_figs,'corr_all_%3.3i_R%3.3i.png'%(i_iter,i_real) ) )
+    
         if n_plots is None:
             plot_every = 1
         elif n_plots >= len(list(self.data_TSMP_i.keys())):
@@ -251,7 +277,7 @@ class operator_clm_SMAP:
                 plt.plot([min_,max_],[min_,max_],'k:')
                 plt.xlabel('Modelled soil moisture')
                 plt.ylabel('SMAP soil moisture')
-                plt.title('%s, R=%3.3f (mean param. values)' % (date_,R) )
+                plt.title('%s, R=%3.3f' % (date_,R) )
                 plt.savefig(os.path.join(dir_figs,'corr_%s_%3.3i_R%3.3i.png'%(str_date,i_iter,i_real) ) )
 
                 # difference
@@ -322,7 +348,10 @@ class operator_clm_FLX:
         else:
             y_out = np.array([])
             for flx_name in y_in.keys():
-                y_out = np.append(y_out,list(y_in[flx_name][var_].values()))     
+                if type(y_in[flx_name][var_])==dict:
+                    y_out = np.append(y_out,list(y_in[flx_name][var_].values()))     
+                else:
+                    y_out = np.append(y_out,y_in[flx_name][var_])
         return y_out
     
 #     def get_measurements_HH(self,date_results_iter,date_DA_start=datetime(1900,1,1),date_DA_end=datetime(2200,1,1)):
@@ -407,7 +436,8 @@ class operator_clm_FLX:
 #         return self.data_flx        
  
 
-    def get_measurements(self,date_results_iter,date_DA_start=datetime(1900,1,1),date_DA_end=datetime(2200,1,1)):
+    def get_measurements(self,date_results_iter,date_DA_start=datetime(1900,1,1),date_DA_end=datetime(2200,1,1),
+                         return_latlon=False,return_dates=False):
         ### Get daily averaged fluxnet measurements 
         # outputdt in lnd_in needs to be set to daily
 
@@ -416,7 +446,10 @@ class operator_clm_FLX:
         
         data_stations = pd.read_csv(self.file_FLX_stations)
         flx_names = data_stations['FLX_name']
-
+        lats_out = np.array([])
+        lons_out = np.array([])
+        dates_out = []
+        
         # loop through the fluxnet stations
         for flx_name,flx_lon,flx_lat in zip(data_stations['FLX_name'], data_stations['lon'], data_stations['lat']):
             
@@ -478,13 +511,26 @@ class operator_clm_FLX:
                             else:
                                 self.data_flx[flx_name]['LE_CORR'][date_] = flx_data_.LE_CORR * 0.035
                                 self.data_flx[flx_name]['LE_RANDUNC'][date_] = flx_data_.LE_RANDUNC * 0.035
-
+                        
+                                if return_dates:
+                                    dates_out.append(date_)
+            
+            lats_out = np.append(lats_out,flx_lat*np.ones(len(self.data_flx[flx_name]['LE_CORR'].keys())) )
+            lons_out = np.append(lons_out,flx_lon*np.ones(len(self.data_flx[flx_name]['LE_CORR'].keys())) )
+            
             if len(self.data_flx[flx_name]['LE_CORR'].keys()) == 0:
                 print('No corrected LE values found for %s' % flx_name)
                 del self.data_flx[flx_name]
 
         # return self.flatten_y(self.sm_out)
-        return self.flatten_y(self.data_flx,var_='LE_CORR'),self.flatten_y(self.data_flx,var_='LE_RANDUNC')**2    
+        if return_latlon and not return_dates:
+            return self.flatten_y(self.data_flx,var_='LE_CORR'),self.flatten_y(self.data_flx,var_='LE_RANDUNC')**2, \
+                    np.array([lats_out, lons_out]).T
+        elif return_latlon and return_dates:
+            return self.flatten_y(self.data_flx,var_='LE_CORR'),self.flatten_y(self.data_flx,var_='LE_RANDUNC')**2, \
+                    np.array([lats_out, lons_out]).T, dates_out            
+        else:
+            return self.flatten_y(self.data_flx,var_='LE_CORR'),self.flatten_y(self.data_flx,var_='LE_RANDUNC')**2    
     
     
     def interpolate_model_results(self,i_real,settings_run,var='QFLX_EVAP_TOT',history_stream='h1'):
@@ -568,13 +614,14 @@ class operator_clm_FLX:
 
         R = pearsonr(x_all,y_all)[0]
         rmse = np.sqrt(np.mean((x_all-y_all)**2))
+        bias = np.mean(y_all-x_all)
         
         plt.figure(figsize=(5,5))
         plt.plot(x_all,y_all,'o',alpha=.7,markersize=3)
         plt.plot([min_,max_],[min_,max_],'k:')
         plt.xlabel('Modelled ET [mm/d]')
         plt.ylabel('FLUXNET ET [mm/d]')
-        plt.title('Correlation all FLUXNET stations, \nR=%3.3f, RMSE=%3.2e' % (R,rmse))
+        plt.title('Correlation all FLUXNET stations, \nR=%3.3f, RMSE=%3.2e, bias=%3.3f' % (R,rmse,bias))
         plt.savefig(os.path.join(dir_figs,'FLX_corr_all_%3.3i_R%3.3i.png'%(i_iter,i_real) ) )
         
         
@@ -608,9 +655,9 @@ class operator_clm_FLX:
             plt.errorbar(self.data_flx[flx_name]['LE_CORR'].keys(),self.data_flx[flx_name]['LE_CORR'].values(),
                          list(self.data_flx[flx_name]['LE_RANDUNC'].values()),fmt='o',capsize=2)
             
-            lstyles = ['-','--',':']
+            lstyles = ['-','--',':','-.']
             for i_real in self.data_TSMP_all.keys(): 
-                i_style = int(i_real)//20
+                i_style = (int(i_real)//20)%4 #only 4 linestyles available
                 i_color = int(i_real)%20                
                 color_ = cmap(i_color)
                 
