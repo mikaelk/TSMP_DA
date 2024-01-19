@@ -15,7 +15,9 @@ from DA_operators import operator_clm_SMAP, operator_clm_FLX
 
 from settings import settings_run,settings_clm,settings_pfl,settings_sbatch,settings_DA,settings_gen,date_results_binned,freq_output,date_range_noleap
 
-from multiprocessing import Pool
+# from multiprocessing import Pool
+import multiprocessing as mp
+
 from itertools import repeat
 from scipy import sparse
 
@@ -38,8 +40,7 @@ def realize_parameters(i_real,settings_gen,settings_run,init=True,run_prior=Fals
         print('Creating parameter realizations for ensemble member %i' % i_real)
         print('Creating folder for realization %i: %s' % (i_real,dir_real), flush=True )
         os.mkdir(dir_real)
-        print('...')
-        time.sleep(3)
+        time.sleep(1)
         
         if init:
             print('Initializing parameters from prior parameter settings')
@@ -60,14 +61,22 @@ def realize_parameters(i_real,settings_gen,settings_run,init=True,run_prior=Fals
         else:
             print('Updating parameters from DA analysis')
             for p_name, p_fn_gen in zip(settings_gen['param_names'],settings_gen['param_gen']):
+                print('Debug: realize_parameters, i_real %i, %s, %s' % (i_real,p_name, p_fn_gen) )
                 p_fn_gen(i_real,settings_gen,settings_run)
             
-        
+def worker_realize_parameters(*args, **kwargs):
+    try:
+        realize_parameters(*args, **kwargs)
+    except Exception as e:
+        print(f"Exception in worker: {e}")
+
+            
 def read_parameters(n_ensemble,settings_gen,settings_run):
     # read parameter values of the different ensemble members into an array
     param_names = []
     param_latlon = np.array([])
     param_r_loc = np.array([])
+    param_lengths_old = []
     for i1 in np.arange(n_ensemble):
         param_tmp = np.array([])
         
@@ -75,6 +84,7 @@ def read_parameters(n_ensemble,settings_gen,settings_run):
             for i2,p_name in enumerate(settings_gen['param_names']):
                 param_ = np.load(os.path.join(settings_run['dir_DA'],'%s.param.%3.3i.%3.3i.%3.3i.npy'% (p_name,settings_gen['i_date'],settings_gen['i_iter'],i1+1) ))
                 # settings_gen['param_length'][p_name] = len(param_)
+                param_lengths_old.append(len(param_))
                 param_tmp = np.append(param_tmp,param_)
                 param_names.extend([p_name + '_%i'%int_ for int_ in np.arange(len(param_))])
                 param_r_loc = np.append(param_r_loc,settings_gen['param_r_loc'][i2]*np.ones(len(param_)))
@@ -92,10 +102,16 @@ def read_parameters(n_ensemble,settings_gen,settings_run):
             param_all = param_tmp.copy()
             
         else:
+            param_lengths = []
             for i2,p_name in enumerate(settings_gen['param_names']):
                 param_ = np.load(os.path.join(settings_run['dir_DA'],'%s.param.%3.3i.%3.3i.%3.3i.npy'% (p_name,settings_gen['i_date'],settings_gen['i_iter'],i1+1) ))
+                param_lengths.append(len(param_))
                 param_tmp = np.append(param_tmp,param_)        
             param_all = np.vstack((param_all,param_tmp))
+            
+            if param_lengths != param_lengths_old:
+                raise RuntimeError('parameter lengths not equal\n%s\n%s' % (param_lengths,param_lengths_old))
+                
     return param_all.T,param_names,param_latlon,param_r_loc
 
 
@@ -151,6 +167,7 @@ def check_for_success(dir_iter,dir_DA,dir_settings,date_results_iter,n_ensemble)
         flag_success = np.zeros(n_ensemble,dtype=bool)
         for i1 in range(1,n_ensemble+2):
             restart_file = glob(os.path.join(dir_iter,'R%3.3i/run_%s/*.clm2.r.*.nc'%(i1,str_date)))
+            print('Restart file: %i, %s' %(i1,restart_file) )
             if len(restart_file) > 0:
                 flag_success[i1-1] = True
 
@@ -171,10 +188,10 @@ def check_for_success(dir_iter,dir_DA,dir_settings,date_results_iter,n_ensemble)
             print('Moving R%3.3i to R%3.3i (failed run)' %(i_source,i_dest) )
             print('-----------------Important!!!!!-----------------')
 
-            paramfiles_source = glob(os.path.join(dir_DA,'*.%3.3i.npy'%i_source))
-            paramfiles_source_tmp = [file_ + '_old' for file_ in paramfiles_source]
-            paramfiles_dest = glob(os.path.join(dir_DA,'*.%3.3i.npy'%i_dest))
-            paramfiles_dest_tmp = [file_ + '_old' for file_ in paramfiles_dest]
+            paramfiles_source = sorted(glob(os.path.join(dir_DA,'*.%3.3i.npy'%i_source)))
+            paramfiles_source_tmp = sorted([file_ + '_old' for file_ in paramfiles_source])
+            paramfiles_dest = sorted(glob(os.path.join(dir_DA,'*.%3.3i.npy'%i_dest)))
+            paramfiles_dest_tmp = sorted([file_ + '_old' for file_ in paramfiles_dest])
 
             shutil.move(os.path.join(dir_iter,'R%3.3i'%i_dest),os.path.join(dir_iter,'R%3.3i_old'%i_dest) )
             shutil.move(os.path.join(dir_iter,'R%3.3i'%i_source),os.path.join(dir_iter,'R%3.3i'%i_dest) )
@@ -201,7 +218,20 @@ def mask_observations(data_names,data_measured,data_var,data_latlon,data_nselect
     data_indices = {}
     i_start = 0
     i_end = np.inf
+    
+    # print(factor_inflate)
+    n_vars = len(data_names)
+    if type(factor_inflate) == float:
+        var_inflate = {var_ : factor_inflate for var_ in data_names}
+    elif type(factor_inflate) == dict:
+        var_inflate = factor_inflate.copy()
+    else:
+        raise RuntimeError('type should be float or dict')
+        
     for i1,var_ in enumerate(data_names):
+        # print(var_,data_var[var_],var_inflate[var_])
+        data_var[var_] *= var_inflate[var_]
+        
         n_select = data_nselect[var_]
         if len(data_measured[var_]) < n_select:
             data_mask[var_] = np.ones(len(data_measured[var_]),dtype=bool)
@@ -232,8 +262,9 @@ def mask_observations(data_names,data_measured,data_var,data_latlon,data_nselect
         print('Thinned out %s observations: %i -> %i' % (var_,len(data_measured[var_]),n_select))
 
     n_data = i_end
-    data_var_masked*=factor_inflate
+    # data_var_masked*=factor_inflate
     return data_mask,data_indices,n_data,data_measured_masked,data_var_masked,data_latlon_masked
+
 
 
 def plot_prior_post(param_f,param_a,param_names_all,i_iter,dir_figs=os.path.join('.','params') ):
@@ -260,7 +291,7 @@ def plot_prior_post(param_f,param_a,param_names_all,i_iter,dir_figs=os.path.join
         if c == 16 or i_ == n_param-1:
             fig.suptitle('Iter %i -> %i' %(i_iter,i_iter+1))
             fig.tight_layout()
-            fig.savefig(os.path.join(dir_figs,'params_i%3.3i_%i.png'%(i_iter,c2)) )
+            fig.savefig(os.path.join(dir_figs,'params_i%3.3i_%3.3i.png'%(i_iter,c2)) )
             c2 += 1
 
             
@@ -314,7 +345,7 @@ def update_step_ESMDA(param_f,data_f,data_measured,data_var,alpha,i_iter):
 
 def update_step_ESMDA_loc(mat_M,mat_D,data_measured,data_var,alpha,i_iter,n_iter,
                           param_latlon=None,param_r_loc=None,data_latlon=None,ksi=.99,
-                          dzeta_global=1.,dir_settings='.'):
+                          dzeta_global=1.,dir_settings='.',factor_inflate_prior=1.):
     """
     Optimized version for many observations
     Possibility to include localisation
@@ -328,31 +359,34 @@ def update_step_ESMDA_loc(mat_M,mat_D,data_measured,data_var,alpha,i_iter,n_iter
         Based on Rafiee and Reynolds, 2017 (Hankes regularization condition)
         Calculate set of inflation factors
         """
-        try:
-            from scipy.optimize import minimize_scalar
-            def f1(gamma,alpha_1,N_a):
-                    sum_ = 0
-                    for i in range(N_a):
-                        k= i+1
-                        if ( (gamma**(k-1)) * alpha_1) == 0:
-                            print(gamma,k,alpha_1)
-                        sum_ += (1/ ( (gamma**(k-1)) * alpha_1) )
+        if n_iter == 1:
+            alphas = [1]
+        else:
+            try:
+                from scipy.optimize import minimize_scalar
+                def f1(gamma,alpha_1,N_a):
+                        sum_ = 0
+                        for i in range(N_a):
+                            k= i+1
+                            if ( (gamma**(k-1)) * alpha_1) == 0:
+                                print(gamma,k,alpha_1)
+                            sum_ += (1/ ( (gamma**(k-1)) * alpha_1) )
 
-                    return (sum_ - 1)**2
+                        return (sum_ - 1)**2
 
-            rho = .5
-            alpha_1 = max((rho/(1-rho))*lambda_Wd_.mean()**2,n_iter)
+                rho = .5
+                alpha_1 = max((rho/(1-rho))*lambda_Wd_.mean()**2,n_iter)
 
-            res = minimize_scalar(f1,bounds=(0.001,0.999),bracket=(0.001,0.999),args=(alpha_1,n_iter))
-            gamma = res.x
+                res = minimize_scalar(f1,bounds=(0.001,0.999),bracket=(0.001,0.999),args=(alpha_1,n_iter))
+                gamma = res.x
 
-            alphas = [(gamma**k)*alpha_1 for k in np.arange(n_iter)]
-            print('Inflation factors (alpha) calculated:',alphas)
-        except:
-            print('Inflation factor (alpha) calculation failed, falling back to alpha=n_iter')
-            alphas = [n_iter for k in np.arange(n_iter)]
+                alphas = [(gamma**k)*alpha_1 for k in np.arange(n_iter)]
+                print('Inflation factors (alpha) calculated:',alphas)
+            except:
+                print('Inflation factor (alpha) calculation failed, falling back to alpha=n_iter')
+                alphas = [n_iter for k in np.arange(n_iter)]
 
-        assert( np.sum(1/np.array(alphas))-1 < 1e-5)
+            assert( np.sum(1/np.array(alphas))-1 < 1e-5)
 
         return alphas
 
@@ -368,6 +402,8 @@ def update_step_ESMDA_loc(mat_M,mat_D,data_measured,data_var,alpha,i_iter,n_iter
     del_M = (1/np.sqrt(n_ensemble-1))*(mat_M - mat_M.mean(axis=1)[:,np.newaxis])
     del_D = (1/np.sqrt(n_ensemble-1))*(mat_D - mat_D.mean(axis=1)[:,np.newaxis])
 
+    del_D *= factor_inflate_prior
+    
     S = sparse.diags(C_D.diagonal()**(1/2))
     C_Dh = 1.*sparse.eye(n_data_)
     Sinv = sparse.diags(1/S.diagonal()) #inverse of diagonal matrix: simply the reciprocal
@@ -514,6 +550,7 @@ if __name__ == '__main__':
     # prescribe_alpha = settings_DA['prescribe_alpha']
     alpha = settings_DA['alpha']
     factor_inflate = settings_DA['factor_inflate']
+    factor_inflate_prior = settings_DA['factor_inflate_prior']
     ksi=settings_DA['cutoff_svd']
     
     ### Unpack some of the settings into variables
@@ -605,7 +642,7 @@ if __name__ == '__main__':
     
     mismatch_iter = [0]
     #%% ----------- iteration loop -----------    
-    # this comes in the iteration loop, e.g. interate every year n times in the optimization
+    # this comes in the iteration loop, e.g. iterate every year n times in the optimization
     for i_iter in np.arange(n_iter):
 
         # Set initialization flag to True in the first loop (for parameter initialization)
@@ -634,18 +671,22 @@ if __name__ == '__main__':
             settings_gen['param_r_loc'] = settings_DA['param_r_loc']
             # settings_gen['param_length'] = param_length
 
-            # with Pool(processes=n_parallel_setup) as pool:
-            #     pool.starmap(realize_parameters, zip(np.arange(0,n_ensemble+1),repeat(settings_gen),repeat(settings_run),repeat(init)) )
-            for i_real in np.arange(0,n_ensemble+1):
-                realize_parameters(i_real,settings_gen,settings_run,init=init)
-
+            if n_parallel_setup == 1:
+                for i_real in np.arange(0,n_ensemble+1):
+                    realize_parameters(i_real,settings_gen,settings_run,init=init)
+            else:
+                with mp.get_context("spawn").Pool(processes=n_parallel_setup) as pool: 
+                    pool.starmap(worker_realize_parameters, zip(np.arange(0,n_ensemble+1),repeat(settings_gen),repeat(settings_run),repeat(init)) )
+                    pool.close()
+                    pool.join()
+                    
             print('n_ensemble: %i' % n_ensemble, flush=True)
             # Aggregrate all parameter values into param_f
             param_f,param_names_all,param_latlon,param_r_loc = read_parameters(n_ensemble,settings_gen,settings_run)
             n_param = len(param_f)
             print('Amount of parameters to assimilate: %i' % n_param, flush=True)
 
-            with Pool(processes=n_parallel) as pool:
+            with mp.Pool(processes=n_parallel) as pool:
                 pool.starmap(setup_submit_wait, zip(np.arange(0,n_ensemble+1),repeat(settings_run),repeat(settings_clm),
                                                    repeat(settings_pfl),repeat(settings_sbatch),repeat(date_results_iter)) )
             
@@ -691,38 +732,48 @@ if __name__ == '__main__':
                     operator['SMAP'].plot_results(i_iter,i_real,settings_run,indices_z=0,var='SOILLIQ',n_plots=4)
             t1 = time.time()
             print('%f seconds for interpolating/plotting all ensemble members'%(t1-t0), flush=True)
+            print('Shape of data array (data_f):')
+            print(data_f.shape)
             
             if 'FLX' in data_names and plot_members_FLX:
                 operator['FLX'].plot_all_results(i_iter,settings_run,dir_figs=os.path.join(settings_run['dir_figs'],'FLX'))
                 
-            print('Performing Kalman update...', flush=True)
-            #
-            
-# def update_step_ESMDA_loc(mat_M,mat_D,data_measured,data_var,alpha,i_iter,n_iter,
-#                           param_latlon=None,param_r_loc=None,data_latlon=None,ksi=.99)
 
+            print('Performing Kalman update...', flush=True)
             t0 = time.time()
             param_a,mean_mismatch_new,alpha = update_step_ESMDA_loc(param_f,data_f,data_measured_masked,data_var_masked,alpha,i_iter,n_iter,
                                                                     param_latlon=param_latlon,param_r_loc=param_r_loc,data_latlon=data_latlon_masked,ksi=ksi,
-                                                                    dir_settings=dir_settings,dzeta_global=settings_DA['dzeta_global'])
+                                                                    dir_settings=dir_settings,dzeta_global=settings_DA['dzeta_global'],
+                                                                    factor_inflate_prior=factor_inflate_prior)
             t1 = time.time()
             print('%f seconds for Kalman update'%(t1-t0), flush=True)
-        
+
             write_parameters(param_a,settings_gen,settings_run)
-   
+
             mismatch_iter.append(mean_mismatch_new)
             print('Mismatch (old forecast vs. new forecast): %3.3f -> %3.3f' % (mismatch_iter[-2],mismatch_iter[-1]), flush=True)
-            
-            plot_prior_post(param_f,param_a,param_names_all,i_iter,dir_figs=os.path.join(settings_run['dir_figs'],'params'))
-        
-        
-    # last iteration: only compute result of most likely parameters,
-    # extend runs by an extra time period for validation
-    # iter_n, R000: DA run (most likely parameters)
-    # iter_n, R001: OL run, extended to include validation results
-    init_list = [False,True] #DA run is already initialized, treat OL as non-initialized
-    run_prior = [False,True] #run OL with prior parameter values
 
+            plot_prior_post(param_f,param_a,param_names_all,i_iter,dir_figs=os.path.join(settings_run['dir_figs'],'params'))
+
+
+    # last iteration: 
+    # only compute result of most likely parameters if required
+    # extend runs by an extra time period for validation
+    # iter_n, R000: Most likely parameter run
+    # iter_n, R001-R00N: Different ensemble members (N=n_ensemble)
+    # iter_n, R00N+1: OL run, extended to include validation results
+    
+    if settings_DA['last_iter_ML_only']:
+        init_list = [False,True] #DA run is already initialized, treat OL as non-initialized (i.e. read parameters from prior)
+        run_prior = [False,True] #run OL with prior parameter values
+        list_i_real = [0, n_ensemble+1]
+    else: #evaluate the entire ensemble, plus the original prior settings (OL run)
+        init_list = [False for i in range(n_ensemble+1)] #0...N: initialized, N+1 (OL) needs to be initialized from prior
+        init_list.append(True)
+        run_prior = [False for i in range(n_ensemble+1)]
+        run_prior.append(True)
+        list_i_real = [0+c for c in range(n_ensemble+2)] #[0...N,N+1]
+        
     i_iter += 1
     str_iter = 'i%3.3i' % i_iter
     dir_iter = os.path.join(dir_date,str_iter)
@@ -746,11 +797,11 @@ if __name__ == '__main__':
     settings_gen['param_names'] = param_names
     settings_clm['vars_dump'] = settings_clm['vars_dump_val']
 
-    for i_real in np.arange(0,2):
-        realize_parameters(i_real,settings_gen,settings_run,init=init_list[i_real],run_prior=run_prior[i_real])
+    for i_,i_real in enumerate(list_i_real):
+        realize_parameters(i_real,settings_gen,settings_run,init=init_list[i_],run_prior=run_prior[i_])
 
-    with Pool(processes=2) as pool:
-        pool.starmap(setup_submit_wait, zip(np.arange(0,2),repeat(settings_run),repeat(settings_clm),
+    with mp.Pool(processes=n_parallel+1) as pool:
+        pool.starmap(setup_submit_wait, zip(list_i_real,repeat(settings_run),repeat(settings_clm),
                                            repeat(settings_pfl),repeat(settings_sbatch),repeat(date_results_iter)) )
 
     operator = {}
@@ -760,13 +811,16 @@ if __name__ == '__main__':
     operator['FLX'] = operator_clm_FLX(settings_DA['file_lsm'],settings_DA['file_corner'],settings_DA['folder_FLX'],ignore_rivers=False)
     _ = operator['FLX'].get_measurements(date_results_iter,date_DA_start=date_start_sim)
 
-    for i_real in np.arange(0,2):
+    dir_figures_validation = os.path.join(settings_run['dir_figs'],'validation')
+    for i_real in list_i_real:
         _ = operator['SMAP'].interpolate_model_results(i_real,settings_run,indices_z=[0,1],var='SOILLIQ')
-        operator['SMAP'].plot_results(i_iter,i_real,settings_run,indices_z=0,var='SOILLIQ',n_plots=24*4)
+        operator['SMAP'].plot_results(i_iter,i_real,settings_run,dir_figs=dir_figures_validation,indices_z=0,var='SOILLIQ',n_plots=24*4)
         _ = operator['FLX'].interpolate_model_results(i_real,settings_run)
-        operator['FLX'].plot_results(i_iter,i_real,settings_run,dir_figs=os.path.join(settings_run['dir_figs'],'FLX'))
+        operator['FLX'].plot_results(i_iter,i_real,settings_run,dir_figs=dir_figures_validation)
             
-      
+    if 'FLX' in data_names and plot_members_FLX:
+        operator['FLX'].plot_all_results(i_iter,settings_run,dir_figs=dir_figures_validation)
+
     print('---------------------------------------')
     print('Wow, the DA actually finished, congrats')
     print('---------------------------------------')

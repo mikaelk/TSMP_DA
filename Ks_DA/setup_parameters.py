@@ -634,6 +634,26 @@ def setup_medlyn_intercept(settings_setup,settings_run):
     # vals_std = .5*np.ones(len(vals_mean)) # cover 1 OM in the CI (+-)
     vals_std = np.log10(1.2)*np.ones(len(vals_mean))
     np.save(os.path.join(dir_out,'medlyn_intercept.param.000.000.prior'),np.array([vals_mean,vals_std]).T)
+
+    
+def setup_medlyn_slope_v2(settings_setup,settings_run):
+    dir_out = settings_run['dir_DA']
+
+    # vals_min = np.array([1.29, 1.29, 1.29, 1.63, 1.63, 3.19, 3.19, 3.19, 2.25, 2.25, 2.25, 1.77, 3.05, 0.53, 3.46, 0.53]) #Dagon et al. (2020)
+    # vals_max = np.array([4.70, 4.70, 4.70, 4.59, 4.59, 5.11, 5.11, 5.11, 9.27, 9.27, 9.27, 2.66, 9.45, 4.03, 7.70, 4.03])
+    vals_min = np.array([1.29,         1.29,       1.63,       3.19,       2.25, 2.25,             3.05,       0.53, 0.53]) #Dagon et al. (2020)
+    vals_max = np.array([4.70,         4.70,       4.59,       5.11,       9.27, 9.27,             9.45,       7.70, 7.70]) #crops: min/max of C3 and C4 crops
+
+    n_sigma = 2 #define the interal between min and max as the 95% CI
+    vals_mean = .5*(vals_min+vals_max)
+    vals_std = (vals_mean-vals_min)/n_sigma
+    np.save(os.path.join(dir_out,'medlyn_slope_v2.param.000.000.prior'),np.array([vals_mean,vals_std]).T)
+    
+def setup_medlyn_intercept_v2(settings_setup,settings_run):
+    dir_out = settings_run['dir_DA']
+    vals_mean = np.log10(100.*np.ones(9))
+    vals_std = np.log10(1.2)*np.ones(len(vals_mean))
+    np.save(os.path.join(dir_out,'medlyn_intercept_v2.param.000.000.prior'),np.array([vals_mean,vals_std]).T)
     
    
 def setup_fff(settings_setup,settings_run):

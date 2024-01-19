@@ -15,7 +15,7 @@ from sloth.IO import readSa, writeSa
 
 def generate_anomaly_field(X_train,Y_train,data_indi,mode='ml',
                            shape_out=None,mask_land=None,length_scale=30,length_scale_bounds='fixed',
-                           vary_depth=True,depth_setting='PFL'):
+                           nu=1.5,vary_depth=True,depth_setting='PFL'):
     """
     Generate anomaly field using Gaussian Process Regression
     X_train: [X,Y,Z] coordinates
@@ -43,7 +43,7 @@ def generate_anomaly_field(X_train,Y_train,data_indi,mode='ml',
 
         return gprs_
 
-    kernel = 1.0 * Matern(length_scale=length_scale,nu=1.5,length_scale_bounds=length_scale_bounds)
+    kernel = 1.0 * Matern(length_scale=length_scale,nu=nu,length_scale_bounds=length_scale_bounds)
 
     if depth_setting == 'PFL':
         indi_dz = 2*np.array([9.0,7.5,5.0,5.0,2.0,0.5,0.35,0.25,0.15,0.10,0.065,0.035,0.025,0.015,0.01])
@@ -715,6 +715,7 @@ def generate_sandfrac_anom(i_real,settings_gen,settings_run):
     mode = 'rnd'
     length_scale = settings_gen['texture_anom_l']
     length_scale_bounds = settings_gen['texture_anom_l_bounds']
+    nu = settings_gen['texture_nu']
     
     plot = settings_gen['texture_plot']
     folder_figs = os.path.join(dir_real,'figures') 
@@ -736,8 +737,10 @@ def generate_sandfrac_anom(i_real,settings_gen,settings_run):
     Y_train = np.load(os.path.join(dir_in,'sandfrac_anom.param.%3.3i.%3.3i.%3.3i.npy'%(settings_gen['i_date'],settings_gen['i_iter'],i_real) ))
 
     anom_field = generate_anomaly_field(X_train,Y_train,data_texture,mode='ml',
-                                        shape_out=data_texture.shape,mask_land=mask_land,length_scale=length_scale,
+                                        shape_out=data_texture.shape,mask_land=mask_land,
+                                        length_scale=length_scale,
                                         length_scale_bounds=length_scale_bounds,
+                                        nu=nu,
                                         vary_depth=vary_depth,depth_setting='eCLM')
     anom_field[:,~mask_land]=0
 
@@ -799,6 +802,7 @@ def generate_clayfrac_anom(i_real,settings_gen,settings_run):
     mode = 'rnd'
     length_scale = settings_gen['texture_anom_l']
     length_scale_bounds = settings_gen['texture_anom_l_bounds']
+    nu = settings_gen['texture_nu']
 
     plot = settings_gen['texture_plot']
     folder_figs = os.path.join(dir_real,'figures') 
@@ -820,8 +824,10 @@ def generate_clayfrac_anom(i_real,settings_gen,settings_run):
     Y_train = np.load(os.path.join(dir_in,'clayfrac_anom.param.%3.3i.%3.3i.%3.3i.npy'%(settings_gen['i_date'],settings_gen['i_iter'],i_real) ))
 
     anom_field = generate_anomaly_field(X_train,Y_train,data_texture,mode='ml',
-                                        shape_out=data_texture.shape,mask_land=mask_land,length_scale=length_scale,
+                                        shape_out=data_texture.shape,mask_land=mask_land,
+                                        length_scale=length_scale,
                                         length_scale_bounds=length_scale_bounds,
+                                        nu=nu,
                                         vary_depth=vary_depth,depth_setting='eCLM')
     anom_field[:,~mask_land]=0
 
@@ -882,6 +888,7 @@ def generate_orgfrac_anom(i_real,settings_gen,settings_run):
     mode = 'rnd'
     length_scale = settings_gen['texture_anom_l']
     length_scale_bounds = settings_gen['texture_anom_l_bounds']
+    nu = settings_gen['texture_nu']
     
     plot = settings_gen['texture_plot']
     folder_figs = os.path.join(dir_real,'figures') 
@@ -904,8 +911,10 @@ def generate_orgfrac_anom(i_real,settings_gen,settings_run):
     Y_train = np.load(os.path.join(dir_in,'orgfrac_anom.param.%3.3i.%3.3i.%3.3i.npy'%(settings_gen['i_date'],settings_gen['i_iter'],i_real) ))
 
     anom_field = generate_anomaly_field(X_train,Y_train,data_texture,mode='ml',
-                                        shape_out=data_texture.shape,mask_land=mask_land,length_scale=length_scale,
+                                        shape_out=data_texture.shape,mask_land=mask_land,
+                                        length_scale=length_scale,
                                         length_scale_bounds=length_scale_bounds,
+                                        nu=nu,
                                         vary_depth=vary_depth,depth_setting='eCLM')
     anom_field[:,~mask_land]=0
 
@@ -1000,6 +1009,56 @@ def generate_medlyn_intercept(i_real,settings_gen,settings_run):
     
     data = xr.load_dataset(file_in)
     data.medlynintercept[1:len(values)+1] = values.ravel()
+    
+    data.to_netcdf(file_out_tmp)
+    data.close()
+    shutil.move(file_out_tmp,file_out)   
+    
+    
+def generate_medlyn_slope_v2(i_real,settings_gen,settings_run):
+    
+    dir_in = settings_run['dir_DA']
+    values = np.load(os.path.join(dir_in,'medlyn_slope_v2.param.%3.3i.%3.3i.%3.3i.npy'%(settings_gen['i_date'],settings_gen['i_iter'],i_real) ))
+    values[values<.3] = .3 #slope needs to be positive, set to low value when necessary
+    
+    dir_setup = settings_run['dir_setup']
+    dir_real = os.path.join(settings_run['dir_iter'],'R%3.3i'%i_real)
+    
+    file_in = os.path.join(dir_setup,'input_clm/clm5_params.c171117.nc')
+    file_out = os.path.join(dir_real,'clm5_params.c171117.nc') 
+    file_out_tmp = file_out + '.tmp' 
+    
+    if os.path.exists(file_out): #the param file has been adjusted already -> open it again
+        file_in = file_out
+    
+    data = xr.load_dataset(file_in)
+    i_pfts = np.array([1,3,5,7,9,10,13,15,16]) #active pfts in the clm setup
+    data.medlynslope[i_pfts] = values.ravel()
+    
+    data.to_netcdf(file_out_tmp)
+    data.close()
+    shutil.move(file_out_tmp,file_out)    
+    
+def generate_medlyn_intercept_v2(i_real,settings_gen,settings_run):
+    
+    dir_in = settings_run['dir_DA']
+    values_log10 = np.load(os.path.join(dir_in,'medlyn_intercept_v2.param.%3.3i.%3.3i.%3.3i.npy'%(settings_gen['i_date'],settings_gen['i_iter'],i_real) ))
+    values = 10**values_log10
+    values[values<.1] = .1 #negative intercept -> negative stomatal conductance, set to low value instead
+    
+    dir_setup = settings_run['dir_setup']
+    dir_real = os.path.join(settings_run['dir_iter'],'R%3.3i'%i_real)
+    
+    file_in = os.path.join(dir_setup,'input_clm/clm5_params.c171117.nc')
+    file_out = os.path.join(dir_real,'clm5_params.c171117.nc') 
+    file_out_tmp = file_out + '.tmp' 
+    
+    if os.path.exists(file_out): #the param file has been adjusted already -> open it again
+        file_in = file_out
+    
+    data = xr.load_dataset(file_in)
+    i_pfts = np.array([1,3,5,7,9,10,13,15,16]) #active pfts in the clm setup
+    data.medlynintercept[i_pfts] = values.ravel()
     
     data.to_netcdf(file_out_tmp)
     data.close()

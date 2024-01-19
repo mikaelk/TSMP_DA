@@ -10,6 +10,38 @@ from scipy.interpolate import griddata
 from scipy.stats import pearsonr
 import matplotlib.pyplot as plt
 
+def haversine_distance(loc1, loc_array):
+    """
+    Calculate the Haversine distance between a point and an array of points on the Earth
+    given their latitude and longitude in decimal degrees.
+
+    Parameters:
+    - loc1: Tuple containing the latitude and longitude of the first point (in decimal degrees).
+    - loc_array: Array of tuples, each containing the latitude and longitude of a point (in decimal degrees).
+
+    Returns:
+    - Array of distances between loc1 and each point in loc_array (in kilometers).
+    """
+    if np.isnan(loc1[0]) and np.isnan(loc1[1]):
+        distances = np.zeros(len(loc_array))
+    else:
+        # Radius of the Earth in kilometers
+        R = 6371.0
+
+        # Convert decimal degrees to radians
+        lat1_rad, lon1_rad = np.radians(loc1)
+        lat2_rad, lon2_rad = np.radians(np.array(loc_array).T)
+
+        # Haversine formula
+        dlat = lat2_rad - lat1_rad
+        dlon = lon2_rad - lon1_rad
+
+        a = np.sin(dlat / 2)**2 + np.cos(lat1_rad) * np.cos(lat2_rad) * np.sin(dlon / 2)**2
+        c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1 - a))
+
+        distances = R * c
+    return distances
+
 def get_TSMP_grid(file_centre,file_corner,ignore_rivers=False):
     grid_centre = xr.open_dataset(file_centre, decode_times=False)
     grid_corner = xr.open_dataset(file_corner)
@@ -228,7 +260,7 @@ class operator_clm_SMAP:
             dir_figs = os.path.join(settings_run['dir_iter'],'R%3.3i/figures'%i_real)
         if not os.path.exists(dir_figs):
             print('Creating folder to store DA information: %s' % (dir_figs) )
-            os.mkdir(dir_figs)
+            os.makedirs(dir_figs)
             
         cmap = plt.get_cmap('viridis').copy()
         cmap.set_extremes(under='k', over='r')
@@ -354,104 +386,23 @@ class operator_clm_FLX:
                     y_out = np.append(y_out,y_in[flx_name][var_])
         return y_out
     
-#     def get_measurements_HH(self,date_results_iter,date_DA_start=datetime(1900,1,1),date_DA_end=datetime(2200,1,1)):
-#         ### Get hourly fluxnet measurements -> not used anymore, standard is daily
-#         # outputdt in lnd_in needs to be set to hourly
-
-#         self.data_flx = {}
-#         self.file_FLX_stations = os.path.join(self.folder_FLX, 'stations.csv')
-        
-#         data_stations = pd.read_csv(self.file_FLX_stations)
-#         flx_names = data_stations['FLX_name']
-
-#         # loop through the fluxnet stations
-#         for flx_name,flx_lon,flx_lat in zip(data_stations['FLX_name'], data_stations['lon'], data_stations['lat']):
-
-#             self.data_flx[flx_name] = {}
-#             self.data_flx[flx_name]['lon'] = flx_lon
-#             self.data_flx[flx_name]['lat'] = flx_lat
-#             self.data_flx[flx_name]['LE_CORR'] = {}
-#             self.data_flx[flx_name]['LE_RANDUNC'] = {}
-
-#             # then loop through the dates
-#             yr_current = 0
-#             valid_location = False
-#             for date_results in date_results_iter:
-
-#                 for date_ in date_results[1:]:
-
-#                     # only load in the data if the year has changed (I separated the FLUXNET data per year to keep file size small)
-#                     if date_.year != yr_current:
-#                         yr_current = date_.year
-
-#                         # Define the column containing the date
-#                         date_column = 'TIMESTAMP_START'
-#                         # Define a function to parse the date string to datetime
-#                         date_parser = lambda x: pd.to_datetime(x, format='%Y%m%d%H%M')
-
-#                         file = glob('/p/scratch/cjibg36/kaandorp2/data/FLUXNET/%i/FLX_%s_FLUXNET2015_FULLSET_HH_*.csv'%(yr_current,flx_name))[0]
-#                         flx_data = pd.read_csv(file,parse_dates=[date_column])
-
-#                         # check if the lon/lat fall within the domain
-#                         valid_location = griddata((np.concatenate((self.grid_TSMP.lon_centre.values.ravel(),self.grid_TSMP.lon_edges)),
-#                                                    np.concatenate((self.grid_TSMP.lat_centre.values.ravel(),self.grid_TSMP.lat_edges))),
-#                                                  np.concatenate((self.grid_TSMP.lsm.values.ravel(),self.grid_TSMP.lsm_edges)),
-#                                                  (flx_lon,flx_lat),method='nearest') == 2
-#                         if len(flx_data) == 0:
-#                             valid_location = False
-                            
-#                         if not valid_location:
-#                             print('%s falling outside of TSMP domain (time and/or space)' % flx_name)
-
-
-#                     if date_ < date_DA_start or date_ > date_DA_end:
-#                         # print('Skipping %s: outside of range %s-%s'%(str(date_),str(date_DA_start),str(date_DA_end)) )
-#                         pass
-#                     elif valid_location:
-#                         #for the given model date (date_) get the corresponding FLUXNET data
-#                         try:
-#                             i_closest = np.argmin(np.abs(flx_data['TIMESTAMP_START'] - date_))
-#                             diff_days = abs(flx_data['TIMESTAMP_START'][i_closest] - date_)
-#                         except:
-#                             print(file)
-#                             print(flx_data['TIMESTAMP_START'], date_)
-#                         if diff_days > timedelta(hours=1):
-#                             pass
-#                             # print('Measurement and model output differ more than a hour, FLUXNET: %s, TSMP: %s'%(flx_data['TIMESTAMP_START'][i_closest],date_))
-#                             # This happens e.g. when not every day has a measurement
-#                         else:
-#                             flx_data_ = flx_data.iloc[i_closest,:]
-
-#                             if flx_data_.LE_CORR == -9999:
-#                                 pass #skip if values are 'nan'
-#                             else:
-#                                 self.data_flx[flx_name]['LE_CORR'][date_] = flx_data_.LE_CORR / 2.45e6
-#                                 self.data_flx[flx_name]['LE_RANDUNC'][date_] = flx_data_.LE_RANDUNC / 2.45e6
-
-#             if len(self.data_flx[flx_name]['LE_CORR'].keys()) == 0:
-#                 print('No corrected LE values found for %s' % flx_name)
-#                 del self.data_flx[flx_name]
-
-#         # return self.flatten_y(self.sm_out)
-#         return self.data_flx        
- 
 
     def get_measurements(self,date_results_iter,date_DA_start=datetime(1900,1,1),date_DA_end=datetime(2200,1,1),
-                         return_latlon=False,return_dates=False):
+                         return_latlon=False,return_dates=False,delimiter=';'):
         ### Get daily averaged fluxnet measurements 
         # outputdt in lnd_in needs to be set to daily
 
         self.data_flx = {}
         self.file_FLX_stations = os.path.join(self.folder_FLX, 'stations.csv')
         
-        data_stations = pd.read_csv(self.file_FLX_stations)
+        data_stations = pd.read_csv(self.file_FLX_stations,delimiter=delimiter)
         flx_names = data_stations['FLX_name']
         lats_out = np.array([])
         lons_out = np.array([])
         dates_out = []
         
         # loop through the fluxnet stations
-        for flx_name,flx_lon,flx_lat in zip(data_stations['FLX_name'], data_stations['lon'], data_stations['lat']):
+        for flx_name,flx_lon,flx_lat,flx_cover in zip(data_stations['FLX_name'], data_stations['lon'], data_stations['lat'], data_stations['landcover']):
             
             # flag, set to True when the location falls within the domain
             valid_location = False
@@ -461,7 +412,8 @@ class operator_clm_FLX:
             self.data_flx[flx_name]['lat'] = flx_lat
             self.data_flx[flx_name]['LE_CORR'] = {}
             self.data_flx[flx_name]['LE_RANDUNC'] = {}
-
+            self.data_flx[flx_name]['landcover'] = flx_cover
+            
             # load in the data, check if location is valid
             date_parser = lambda x: pd.to_datetime(x, format='%Y%m%d')
             date_column = 'TIMESTAMP'
@@ -533,23 +485,42 @@ class operator_clm_FLX:
             return self.flatten_y(self.data_flx,var_='LE_CORR'),self.flatten_y(self.data_flx,var_='LE_RANDUNC')**2    
     
     
-    def interpolate_model_results(self,i_real,settings_run,var='QFLX_EVAP_TOT',history_stream='h1'):
+    def interpolate_model_results(self,i_real,settings_run,var='QFLX_EVAP_TOT',history_stream='h2',file_type='pft'):
         self.data_TSMP_i = {}
         self.files_clm = {}
         files_clm = sorted(glob(os.path.join(settings_run['dir_iter'],'R%3.3i/**/*.clm2.%s.*.nc'%(i_real,history_stream) )))
         # assert len(files_clm) == len(self.sm_out.keys()), 'Something might have gone wrong in realization %i: not every date has a matching file'%i_real
+        
+        # map from the ICOS landcover specifications to the pft indices in CLM
+        # this is not optimal; e.g. for crops there are irrigated/non-irrigated types in CLM, which is not given for the ICOS sites
+        # I mapped savannahs to grasslands, mixed forests to the mean of DBF/ENF
+        # For wetlands and 'XX' (unspecified) I take the grid average values instead of PFT-specific
+        map_landcover_ipft = {'CRO':[15,16],'CSH':[10],'DBF':[7],'ENF':[1],'GRA':[13],'MXF':[1,7],'OSH':[9],'SAV':[13],'WSA':[13],'WET':[None],'XX':[None]}
 
         for flx_name in self.data_flx.keys():
 
             lon_ = self.data_flx[flx_name]['lon']
             lat_ = self.data_flx[flx_name]['lat']
-            
+            landcover = self.data_flx[flx_name]['landcover']
             self.data_TSMP_i[flx_name] = {}
+            
+            # when using PFT specific ET, in the case of e.g. wetlands and 'XX' as landcover type fall back to gridcell average values
+            if map_landcover_ipft[landcover] == [None] and file_type=='pft':
+                file_type_ = 'gridded' 
+                hist_stream_ = 'h1'
+                files_clm_ = sorted(glob(os.path.join(settings_run['dir_iter'],'R%3.3i/**/*.clm2.%s.*.nc'%(i_real,hist_stream_) )))
+            else:
+                file_type_ = file_type
+                hist_stream_ = history_stream
+                files_clm_ = files_clm
+            
+            if i_real == 0:
+                print('Using %s filetype for interpolation of %s (%s)' % (hist_stream_,flx_name,landcover) )
             
             for i1,date_ in enumerate(self.data_flx[flx_name]['LE_CORR'].keys()):
 
                 date_find = str(date_.date())
-                file_matching = [s for s in files_clm if date_find in s]
+                file_matching = [s for s in files_clm_ if date_find in s]
                 
                 if len(file_matching) > 1:
                     print('%i matching files found (%s), taking the last file' %(len(file_matching),sorted(file_matching)))
@@ -561,19 +532,52 @@ class operator_clm_FLX:
                     raise RuntimeError('This operator only works for (more than) one matching model file per date, date:%s, i_real: %i, files: %s'%(date_find,i_real,file_matching) )
 
                 self.files_clm[date_] = file_clm
-
                 data_TSMP = xr.open_dataset(file_clm)
-                # add curvilinear lon/lat 
-                data_TSMP = data_TSMP.assign_coords(lon_c=(('lat','lon'), self.grid_TSMP.lon_centre.values))
-                data_TSMP = data_TSMP.assign_coords(lat_c=(('lat','lon'), self.grid_TSMP.lat_centre.values))
 
-                LE = data_TSMP[var][0].values * (24*60*60) # s-1 to d-1
+                if file_type_ == 'gridded':
+                    # add curvilinear lon/lat 
+                    data_TSMP = data_TSMP.assign_coords(lon_c=(('lat','lon'), self.grid_TSMP.lon_centre.values))
+                    data_TSMP = data_TSMP.assign_coords(lat_c=(('lat','lon'), self.grid_TSMP.lat_centre.values))
 
-                mask_nan = ~np.isnan(LE)
+                    LE = data_TSMP[var][0].values * (24*60*60) # s-1 to d-1
 
-                self.data_TSMP_i[flx_name][date_] = griddata((data_TSMP.lon_c.values[mask_nan],data_TSMP.lat_c.values[mask_nan]),
-                                                             LE[mask_nan],
-                                                             (lon_,lat_), method='nearest')
+                    mask_nan = ~np.isnan(LE)
+
+                    self.data_TSMP_i[flx_name][date_] = griddata((data_TSMP.lon_c.values[mask_nan],data_TSMP.lat_c.values[mask_nan]),
+                                                                 LE[mask_nan],
+                                                                 (lon_,lat_), method='nearest')
+                if file_type_ == 'pft':
+                    # map_landcover_ipft = {'CRO':15,'CSH':10,'DBF':7,'ENF':1,'GRA':13,'MXF':[1,7],'OSH':9,'SAV':13,'WSA':13,'WET':None,'XX':None}
+                    i_pft = map_landcover_ipft[landcover]
+
+                    # avoid interpolating the data every time, since this is very slow
+                    # per station, save the closest lat/lon index in the pft-specific file, since this should not change
+                    if 'i_latlon_pft' not in self.data_flx[flx_name]:
+                        self.data_flx[flx_name]['i_latlon_pft'] = []
+
+                        for i_ in i_pft:
+                            mask_pfts = data_TSMP.pfts1d_itype_veg == i_
+                            lons_masked = data_TSMP.pfts1d_lon.values.copy()
+                            lats_masked = data_TSMP.pfts1d_lat.values.copy()
+                            lons_masked[lons_masked>180] -= 360
+                            lons_masked[~mask_pfts] = None
+                            lats_masked[~mask_pfts] = None
+
+                            i_min = np.nanargmin(haversine_distance((lon_,lat_),np.array([lons_masked,lats_masked]).T))
+                            self.data_flx[flx_name]['i_latlon_pft'].append(i_min)
+                            print('Closest point to %s (%f,%f): %f, %f' % (flx_name, lat_, lon_, lats_masked[i_min], lons_masked[i_min]) )
+
+                    if type(self.data_flx[flx_name]['i_latlon_pft']) == list:
+                        val_tmp = 0
+                        c = 0
+                        for i_min in self.data_flx[flx_name]['i_latlon_pft']:
+                            qflx = data_TSMP.QFLX_EVAP_TOT[0][i_min]
+                            val_tmp += qflx
+                            c+=1
+                        self.data_TSMP_i[flx_name][date_] = (val_tmp / c) * (24*60*60) # s-1 to d-1
+                    else:
+                        raise RuntimeError('i_latlon_pft should be a list')
+
                 
         if self.save_all_results:
             self.data_TSMP_all[i_real] = self.data_TSMP_i
@@ -588,7 +592,7 @@ class operator_clm_FLX:
             dir_figs = os.path.join(settings_run['dir_iter'],'R%3.3i/figures'%i_real)
         if not os.path.exists(dir_figs):
             print('Creating folder to store FLX information: %s' % (dir_figs) )
-            os.mkdir(dir_figs)
+            os.makedirs(dir_figs)
           
         # 1) time series per location
         for flx_name in list(self.data_TSMP_i.keys()):
@@ -601,7 +605,8 @@ class operator_clm_FLX:
             
             plt.xlabel('Date')
             plt.ylabel('ET [mm/d]')
-            plt.title('%s, R=%3.3f, RMSE=%3.2e' % (flx_name,R,rmse))
+            pft_type = self.data_flx[flx_name]['landcover']
+            plt.title('%s (%s), R=%3.3f, RMSE=%3.2e' % (flx_name,pft_type,R,rmse))
             plt.savefig(os.path.join(dir_figs,'FLX_timeseries_%s_%3.3i_R%3.3i.png'%(flx_name,i_iter,i_real) ) )
 
             plt.close('all')
@@ -646,7 +651,7 @@ class operator_clm_FLX:
             dir_figs = os.path.join(settings_run['dir_iter'],'R%3.3i/figures'%i_real)
         if not os.path.exists(dir_figs):
             print('Creating folder to store FLX information: %s' % (dir_figs) )
-            os.mkdir(dir_figs)
+            os.makedirs(dir_figs)
           
         # 1) time series per location
         for flx_name in list(self.data_TSMP_i.keys()):
