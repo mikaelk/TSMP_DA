@@ -452,7 +452,9 @@ def setup_sandfrac_anom(settings_gen,settings_run):
 
     ### generate anomaly field, set uniform for now
     # sig_log_standard = 0.046 #set 1 sigma to ~10% deviation
-    sig_log_standard = 0.090 # 1 sigma to ~20% deviation
+    # sig_log_standard = 0.090 # 1 sigma to ~20% deviation
+    factor_perturb = 1+settings_gen['perturb_frac_std'] #e.g. 1.1, 1.2
+    sig_log_standard = np.log10(factor_perturb)
     field_anom = sig_log_standard*np.ones(data.shape)
 
     ### sample the alpha field at given locations
@@ -511,7 +513,9 @@ def setup_clayfrac_anom(settings_gen,settings_run):
 
     ### generate anomaly field, set uniform for now
     # sig_log_standard = 0.046 #set 1 sigma to ~10% deviation
-    sig_log_standard = 0.090 # 1 sigma to ~20% deviation
+    # sig_log_standard = 0.090 # 1 sigma to ~20% deviation
+    factor_perturb = 1+settings_gen['perturb_frac_std'] #e.g. 1.1, 1.2
+    sig_log_standard = np.log10(factor_perturb)
     field_anom = sig_log_standard*np.ones(data.shape)
 
     ### sample the alpha field at given locations
@@ -569,7 +573,9 @@ def setup_orgfrac_anom(settings_gen,settings_run):
 
     ### generate anomaly field, set uniform for now
     # sig_log_standard = 0.046 #set 1 sigma to ~10% deviation
-    sig_log_standard = 0.090 # 1 sigma to ~20% deviation
+    # sig_log_standard = 0.090 # 1 sigma to ~20% deviation
+    factor_perturb = 1+settings_gen['perturb_frac_std'] #e.g. 1.1, 1.2
+    sig_log_standard = np.log10(factor_perturb)
     field_anom = sig_log_standard*np.ones(data.shape)
 
     ### sample the alpha field at given locations
@@ -732,8 +738,16 @@ def setup_orgmax(settings_setup,settings_run):
     vals_std = 30. 
     np.save(os.path.join(dir_out,'orgmax.param.000.000.prior'),np.array([[vals_mean],[vals_std]]).T)
   
+def setup_orgmax_v2(settings_setup,settings_run):
+    dir_out = settings_run['dir_DA']
+    factor_perturb = 1+settings_setup['perturb_frac_std'] #e.g. 1.1, 1.2
+    vals_mean = np.log10(130.)
+    vals_std = np.log10(factor_perturb) 
+    np.save(os.path.join(dir_out,'orgmax_v2.param.000.000.prior'),np.array([[vals_mean],[vals_std]]).T)
+    
 def setup_om_hydraulic(settings_setup,settings_run):
     dir_out = settings_run['dir_DA']
+    factor_perturb = 1+settings_setup['perturb_frac_std'] #e.g. 1.1, 1.2
     # data['om_thetas_surf'] = 0.93
     # data['om_b_surf'] = 2.7
     # data['om_psis_surf'] = 10.3
@@ -741,7 +755,7 @@ def setup_om_hydraulic(settings_setup,settings_run):
     # data['om_thetas_diff'] = 0.1
     # data['om_b_diff'] = 9.3
     # data['om_psis_diff'] = 0.2
-    std_s = np.log10(1.1) #1.100: use 'standard' option of ~10% variation per C.I.
+    std_s = np.log10(factor_perturb) #1.100: use 'standard' option of ~10% variation per C.I.
     std_th = np.log10(1.05) #uncertainty for porosity - set such that 95% CI falls below 1.0
     # std_k = 1.042 # this led to way too high k -> crashed simulations
     std_k = 1.042/2
@@ -771,11 +785,23 @@ def setup_kmax(settings_setup,settings_run):
     vals_std = val_std*np.ones(len(vals_mean)) 
     np.save(os.path.join(dir_out,'kmax.param.000.000.prior'),np.array([vals_mean,vals_std]).T)
     
+def setup_kmax_v2(settings_setup,settings_run):
+    dir_out = settings_run['dir_DA']
+    val_min = np.log10(2e-9) #Dagon et al. (2020)
+    val_max = np.log10(3.8e-8)
+    n_sigma = 2 #define the interal between min and max as the 95% CI
+    val_mean = .5*(val_min+val_max)
+    val_std = (val_mean-val_min)/n_sigma
+    vals_mean = val_mean*np.ones(9)
+    vals_std = val_std*np.ones(len(vals_mean)) 
+    np.save(os.path.join(dir_out,'kmax_v2.param.000.000.prior'),np.array([vals_mean,vals_std]).T)
+    
 def setup_luna(settings_setup,settings_run):
     # photosynthesis parameters for the luna module in CLM5
     dir_out = settings_run['dir_DA']
+    factor_perturb = 1+settings_setup['perturb_frac_std'] #e.g. 1.1, 1.2
     vals_mean = np.log10([0.0311,0.1745,0.8054,6.0999]) #Jmaxb0 Jmaxb1 Wc2Wjb0 relhExp
-    vals_std = np.log10(1.1)*np.ones_like(vals_mean) #2 sigma: +- 20%
+    vals_std = np.log10(factor_perturb)*np.ones_like(vals_mean) #2 sigma: +- 20%
     np.save(os.path.join(dir_out,'luna.param.000.000.prior'),np.array([vals_mean,vals_std]).T)
     
 if __name__ == '__main__':

@@ -10,37 +10,7 @@ from scipy.interpolate import griddata
 from scipy.stats import pearsonr
 import matplotlib.pyplot as plt
 
-def haversine_distance(loc1, loc_array):
-    """
-    Calculate the Haversine distance between a point and an array of points on the Earth
-    given their latitude and longitude in decimal degrees.
-
-    Parameters:
-    - loc1: Tuple containing the latitude and longitude of the first point (in decimal degrees).
-    - loc_array: Array of tuples, each containing the latitude and longitude of a point (in decimal degrees).
-
-    Returns:
-    - Array of distances between loc1 and each point in loc_array (in kilometers).
-    """
-    if np.isnan(loc1[0]) and np.isnan(loc1[1]):
-        distances = np.zeros(len(loc_array))
-    else:
-        # Radius of the Earth in kilometers
-        R = 6371.0
-
-        # Convert decimal degrees to radians
-        lat1_rad, lon1_rad = np.radians(loc1)
-        lat2_rad, lon2_rad = np.radians(np.array(loc_array).T)
-
-        # Haversine formula
-        dlat = lat2_rad - lat1_rad
-        dlon = lon2_rad - lon1_rad
-
-        a = np.sin(dlat / 2)**2 + np.cos(lat1_rad) * np.cos(lat2_rad) * np.sin(dlon / 2)**2
-        c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1 - a))
-
-        distances = R * c
-    return distances
+from helpers import save_dict_to_pickle, load_dict_from_pickle, haversine_distance
 
 def get_TSMP_grid(file_centre,file_corner,ignore_rivers=False):
     grid_centre = xr.open_dataset(file_centre, decode_times=False)
@@ -388,7 +358,7 @@ class operator_clm_FLX:
     
 
     def get_measurements(self,date_results_iter,date_DA_start=datetime(1900,1,1),date_DA_end=datetime(2200,1,1),
-                         return_latlon=False,return_dates=False,delimiter=';'):
+                         return_latlon=False,return_date=False,delimiter=';'):
         ### Get daily averaged fluxnet measurements 
         # outputdt in lnd_in needs to be set to daily
 
@@ -464,7 +434,7 @@ class operator_clm_FLX:
                                 self.data_flx[flx_name]['LE_CORR'][date_] = flx_data_.LE_CORR * 0.035
                                 self.data_flx[flx_name]['LE_RANDUNC'][date_] = flx_data_.LE_RANDUNC * 0.035
                         
-                                if return_dates:
+                                if return_date:
                                     dates_out.append(date_)
             
             lats_out = np.append(lats_out,flx_lat*np.ones(len(self.data_flx[flx_name]['LE_CORR'].keys())) )
@@ -475,109 +445,136 @@ class operator_clm_FLX:
                 del self.data_flx[flx_name]
 
         # return self.flatten_y(self.sm_out)
-        if return_latlon and not return_dates:
+        if return_latlon and not return_date:
             return self.flatten_y(self.data_flx,var_='LE_CORR'),self.flatten_y(self.data_flx,var_='LE_RANDUNC')**2, \
                     np.array([lats_out, lons_out]).T
-        elif return_latlon and return_dates:
+        elif return_latlon and return_date:
             return self.flatten_y(self.data_flx,var_='LE_CORR'),self.flatten_y(self.data_flx,var_='LE_RANDUNC')**2, \
                     np.array([lats_out, lons_out]).T, dates_out            
         else:
             return self.flatten_y(self.data_flx,var_='LE_CORR'),self.flatten_y(self.data_flx,var_='LE_RANDUNC')**2    
     
     
-    def interpolate_model_results(self,i_real,settings_run,var='QFLX_EVAP_TOT',history_stream='h2',file_type='pft'):
-        self.data_TSMP_i = {}
-        self.files_clm = {}
-        files_clm = sorted(glob(os.path.join(settings_run['dir_iter'],'R%3.3i/**/*.clm2.%s.*.nc'%(i_real,history_stream) )))
-        # assert len(files_clm) == len(self.sm_out.keys()), 'Something might have gone wrong in realization %i: not every date has a matching file'%i_real
+    def interpolate_model_results(self,i_real,settings_run,var='QFLX_EVAP_TOT',history_stream='h2',file_type='pft',retain_history=False):
         
-        # map from the ICOS landcover specifications to the pft indices in CLM
-        # this is not optimal; e.g. for crops there are irrigated/non-irrigated types in CLM, which is not given for the ICOS sites
-        # I mapped savannahs to grasslands, mixed forests to the mean of DBF/ENF
-        # For wetlands and 'XX' (unspecified) I take the grid average values instead of PFT-specific
-        map_landcover_ipft = {'CRO':[15,16],'CSH':[10],'DBF':[7],'ENF':[1],'GRA':[13],'MXF':[1,7],'OSH':[9],'SAV':[13],'WSA':[13],'WET':[None],'XX':[None]}
-
-        for flx_name in self.data_flx.keys():
-
-            lon_ = self.data_flx[flx_name]['lon']
-            lat_ = self.data_flx[flx_name]['lat']
-            landcover = self.data_flx[flx_name]['landcover']
-            self.data_TSMP_i[flx_name] = {}
+        filename_pickle = os.path.join(settings_run['dir_iter'],'R%3.3i/data_FLX.pickle' % i_real)
+        if os.path.exists(filename_pickle):
+            dict_results = load_dict_from_pickle(filename_pickle)
+            self.data_TSMP_i = dict_results['data_TSMP_i']
+            self.files_clm = dict_results['files_clm'] 
             
-            # when using PFT specific ET, in the case of e.g. wetlands and 'XX' as landcover type fall back to gridcell average values
-            if map_landcover_ipft[landcover] == [None] and file_type=='pft':
-                file_type_ = 'gridded' 
-                hist_stream_ = 'h1'
-                files_clm_ = sorted(glob(os.path.join(settings_run['dir_iter'],'R%3.3i/**/*.clm2.%s.*.nc'%(i_real,hist_stream_) )))
-            else:
-                file_type_ = file_type
-                hist_stream_ = history_stream
-                files_clm_ = files_clm
-            
-            if i_real == 0:
-                print('Using %s filetype for interpolation of %s (%s)' % (hist_stream_,flx_name,landcover) )
-            
-            for i1,date_ in enumerate(self.data_flx[flx_name]['LE_CORR'].keys()):
+        else:
+            self.data_TSMP_i = {}
+            self.files_clm = {}
 
-                date_find = str(date_.date())
-                file_matching = [s for s in files_clm_ if date_find in s]
-                
-                if len(file_matching) > 1:
-                    print('%i matching files found (%s), taking the last file' %(len(file_matching),sorted(file_matching)))
-                    file_clm = sorted(file_matching)[-1]
-                elif len(file_matching) == 1:
-                    file_clm = file_matching[0]
+            files_clm = sorted(glob(os.path.join(settings_run['dir_iter'],'R%3.3i/**/*.clm2.%s.*.nc'%(i_real,history_stream) )))
+            # assert len(files_clm) == len(self.sm_out.keys()), 'Something might have gone wrong in realization %i: not every date has a matching file'%i_real
+
+            # map from the ICOS landcover specifications to the pft indices in CLM
+            # this is not optimal; e.g. for crops there are irrigated/non-irrigated types in CLM, which is not given for the ICOS sites
+            # I mapped savannahs (SAV,WSA) to grasslands, mixed forests to the mean of DBF/ENF
+            # For wetlands and 'XX' (unspecified) I take the grid average values instead of PFT-specific
+            # map_landcover_ipft = {'CRO':[15,16],'CSH':[9,10],'DBF':[7],'ENF':[1],'GRA':[13],'MXF':[1,7],'OSH':[9,10],'SAV':[13],'WSA':[13],'WET':[None],'XX':[None]}
+            # map_landcover_ipft = {'CRO':[15],'CSH':[10],'DBF':[7],'ENF':[1],'GRA':[13],'MXF':[None],'OSH':[None],'SAV':[None],'WSA':[None],'WET':[None],'XX':[None]}
+            map_landcover_ipft = {'CRO':[15],'CSH':[9,10],'DBF':[7],'ENF':[1],'GRA':[13],'MXF':[1,7],'OSH':[9,10],'SAV':[13],'WSA':[10],'WET':[None],'XX':[None]}
+
+            for flx_name in self.data_flx.keys():
+
+                lon_ = self.data_flx[flx_name]['lon']
+                lat_ = self.data_flx[flx_name]['lat']
+                landcover = self.data_flx[flx_name]['landcover']
+                self.data_TSMP_i[flx_name] = {}
+
+                # when using PFT specific ET, in the case of e.g. wetlands and 'XX' as landcover type fall back to gridcell average values
+                if map_landcover_ipft[landcover] == [None] and file_type=='pft':
+                    file_type_ = 'gridded' 
+                    hist_stream_ = 'h1'
+                    files_clm_ = sorted(glob(os.path.join(settings_run['dir_iter'],'R%3.3i/**/*.clm2.%s.*.nc'%(i_real,hist_stream_) )))
                 else:
-                    file_clm = None
-                    raise RuntimeError('This operator only works for (more than) one matching model file per date, date:%s, i_real: %i, files: %s'%(date_find,i_real,file_matching) )
+                    file_type_ = file_type
+                    hist_stream_ = history_stream
+                    files_clm_ = files_clm
 
-                self.files_clm[date_] = file_clm
-                data_TSMP = xr.open_dataset(file_clm)
+                if i_real == 0:
+                    print('Using %s filetype for interpolation of %s (%s)' % (hist_stream_,flx_name,landcover) )
 
-                if file_type_ == 'gridded':
-                    # add curvilinear lon/lat 
-                    data_TSMP = data_TSMP.assign_coords(lon_c=(('lat','lon'), self.grid_TSMP.lon_centre.values))
-                    data_TSMP = data_TSMP.assign_coords(lat_c=(('lat','lon'), self.grid_TSMP.lat_centre.values))
+                for i1,date_ in enumerate(self.data_flx[flx_name]['LE_CORR'].keys()):
 
-                    LE = data_TSMP[var][0].values * (24*60*60) # s-1 to d-1
+                    date_find = str(date_.date())
+                    file_matching = [s for s in files_clm_ if date_find in s]
 
-                    mask_nan = ~np.isnan(LE)
-
-                    self.data_TSMP_i[flx_name][date_] = griddata((data_TSMP.lon_c.values[mask_nan],data_TSMP.lat_c.values[mask_nan]),
-                                                                 LE[mask_nan],
-                                                                 (lon_,lat_), method='nearest')
-                if file_type_ == 'pft':
-                    # map_landcover_ipft = {'CRO':15,'CSH':10,'DBF':7,'ENF':1,'GRA':13,'MXF':[1,7],'OSH':9,'SAV':13,'WSA':13,'WET':None,'XX':None}
-                    i_pft = map_landcover_ipft[landcover]
-
-                    # avoid interpolating the data every time, since this is very slow
-                    # per station, save the closest lat/lon index in the pft-specific file, since this should not change
-                    if 'i_latlon_pft' not in self.data_flx[flx_name]:
-                        self.data_flx[flx_name]['i_latlon_pft'] = []
-
-                        for i_ in i_pft:
-                            mask_pfts = data_TSMP.pfts1d_itype_veg == i_
-                            lons_masked = data_TSMP.pfts1d_lon.values.copy()
-                            lats_masked = data_TSMP.pfts1d_lat.values.copy()
-                            lons_masked[lons_masked>180] -= 360
-                            lons_masked[~mask_pfts] = None
-                            lats_masked[~mask_pfts] = None
-
-                            i_min = np.nanargmin(haversine_distance((lon_,lat_),np.array([lons_masked,lats_masked]).T))
-                            self.data_flx[flx_name]['i_latlon_pft'].append(i_min)
-                            print('Closest point to %s (%f,%f): %f, %f' % (flx_name, lat_, lon_, lats_masked[i_min], lons_masked[i_min]) )
-
-                    if type(self.data_flx[flx_name]['i_latlon_pft']) == list:
-                        val_tmp = 0
-                        c = 0
-                        for i_min in self.data_flx[flx_name]['i_latlon_pft']:
-                            qflx = data_TSMP.QFLX_EVAP_TOT[0][i_min]
-                            val_tmp += qflx
-                            c+=1
-                        self.data_TSMP_i[flx_name][date_] = (val_tmp / c) * (24*60*60) # s-1 to d-1
+                    if len(file_matching) > 1:
+                        print('%i matching files found (%s), taking the last file' %(len(file_matching),sorted(file_matching)))
+                        file_clm = sorted(file_matching)[-1]
+                    elif len(file_matching) == 1:
+                        file_clm = file_matching[0]
                     else:
-                        raise RuntimeError('i_latlon_pft should be a list')
+                        file_clm = None
+                        raise RuntimeError('This operator only works for (more than) one matching model file per date, date:%s, i_real: %i, files: %s'%(date_find,i_real,file_matching) )
 
+                    self.files_clm[date_] = file_clm
+                    data_TSMP = xr.open_dataset(file_clm)
+
+                    if file_type_ == 'gridded':
+                        # add curvilinear lon/lat 
+                        data_TSMP = data_TSMP.assign_coords(lon_c=(('lat','lon'), self.grid_TSMP.lon_centre.values))
+                        data_TSMP = data_TSMP.assign_coords(lat_c=(('lat','lon'), self.grid_TSMP.lat_centre.values))
+
+                        LE = data_TSMP[var][0].values * (24*60*60) # s-1 to d-1
+
+                        mask_nan = ~np.isnan(LE)
+
+                        self.data_TSMP_i[flx_name][date_] = griddata((data_TSMP.lon_c.values[mask_nan],data_TSMP.lat_c.values[mask_nan]),
+                                                                     LE[mask_nan],
+                                                                     (lon_,lat_), method='nearest')
+                    if file_type_ == 'pft':
+                        # map_landcover_ipft = {'CRO':15,'CSH':10,'DBF':7,'ENF':1,'GRA':13,'MXF':[1,7],'OSH':9,'SAV':13,'WSA':13,'WET':None,'XX':None}
+                        i_pft = map_landcover_ipft[landcover]
+
+                        # avoid interpolating the data every time, since this is very slow
+                        # per station, save the closest lat/lon index in the pft-specific file, since this is static
+                        if 'i_latlon_pft' not in self.data_flx[flx_name]:
+                            self.data_flx[flx_name]['i_latlon_pft'] = []
+
+                            for i_ in i_pft:
+                                mask_pfts = data_TSMP.pfts1d_itype_veg == i_
+                                lons_masked = data_TSMP.pfts1d_lon.values.copy()
+                                lats_masked = data_TSMP.pfts1d_lat.values.copy()
+                                lons_masked[lons_masked>180] -= 360
+                                lons_masked[~mask_pfts] = None
+                                lats_masked[~mask_pfts] = None
+
+                                i_min = np.nanargmin(haversine_distance((lon_,lat_),np.array([lons_masked,lats_masked]).T))
+                                self.data_flx[flx_name]['i_latlon_pft'].append(i_min)
+                                print('Closest point to %s (%f,%f): %f, %f' % (flx_name, lat_, lon_, lats_masked[i_min], lons_masked[i_min]) )
+
+                        if type(self.data_flx[flx_name]['i_latlon_pft']) == list:
+                            val_tmp = 0
+                            c = 0
+                            for i_min in self.data_flx[flx_name]['i_latlon_pft']:
+                                qflx = data_TSMP.QFLX_EVAP_TOT[0][i_min]
+                                val_tmp += qflx
+                                c+=1
+                            self.data_TSMP_i[flx_name][date_] = (val_tmp / c) * (24*60*60) # s-1 to d-1
+                        else:
+                            raise RuntimeError('i_latlon_pft should be a list')
+
+            dict_results = {}
+            dict_results['data_TSMP_i'] = self.data_TSMP_i
+            dict_results['files_clm'] = self.files_clm
+            save_dict_to_pickle(dict_results,filename_pickle)
+            
+            if not retain_history:
+                #option to remove history files after interpolation, as the ET files get large
+                remove_hist_files=settings_run['remove_hist_files']
+                
+                if remove_hist_files is not None:
+                    assert type(remove_hist_files) == list
+                    
+                    for h_stream in remove_hist_files:
+                        files_remove = sorted(glob(os.path.join(settings_run['dir_iter'],'R%3.3i/**/*.clm2.%s.*.nc'%(i_real,h_stream) )))
+                        for file_ in files_remove:
+                            os.remove(file_)
                 
         if self.save_all_results:
             self.data_TSMP_all[i_real] = self.data_TSMP_i

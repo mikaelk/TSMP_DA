@@ -25,6 +25,8 @@ import matplotlib.pyplot as plt
 from scipy.stats import pearsonr
 import time
 
+from helpers import haversine_distance
+
 os.environ['MKL_NUM_THREADS'] = '4'
 os.nice(5)
 '''
@@ -345,7 +347,7 @@ def update_step_ESMDA(param_f,data_f,data_measured,data_var,alpha,i_iter):
 
 def update_step_ESMDA_loc(mat_M,mat_D,data_measured,data_var,alpha,i_iter,n_iter,
                           param_latlon=None,param_r_loc=None,data_latlon=None,ksi=.99,
-                          dzeta_global=1.,dir_settings='.',factor_inflate_prior=1.):
+                          dzeta_global=1.,dir_settings='.',factor_inflate_prior=1.,loc_type='distance',POL_eps=.5):
     """
     Optimized version for many observations
     Possibility to include localisation
@@ -391,6 +393,7 @@ def update_step_ESMDA_loc(mat_M,mat_D,data_measured,data_var,alpha,i_iter,n_iter
         return alphas
 
     print('Calculating KG and performing parameter update...', flush=True)
+    print('Using %s localisation' % loc_type)
     assert mat_D.shape[0] == len(data_measured)
 
     n_data_ = mat_D.shape[0]
@@ -453,34 +456,42 @@ def update_step_ESMDA_loc(mat_M,mat_D,data_measured,data_var,alpha,i_iter,n_iter
     sum_d_global = 0
     n_param_localized_tot = 0
     # calculate updated (analysis) parameters
+    
+    # used for POL localisation:
+    c_ii = np.var( (mat_M - mat_M.mean(axis=1)[:,np.newaxis]), axis=1, ddof=1) #(n_param,) -> estimate of C_M
+    c_jj = np.var( (mat_D - mat_D.mean(axis=1)[:,np.newaxis]), axis=1, ddof=1) #(n_data,) -> estimate of C_D
+
     param_a = np.zeros(mat_M.shape)
     for i in range(n_param):
-        if np.isnan(param_r_loc[i]):
-            rho_i = dzeta_global*np.ones(n_data_) #no localisation
-            # rho_i = np.ones(n_data_) #no localisation
-            sum_d_global += n_data_
+        
+        # first localisation option: distance based, by using haversine distance & GC function
+        if loc_type == 'distance':    
+            if np.isnan(param_r_loc[i]):
+                rho_i = dzeta_global*np.ones(n_data_) #no localisation
+            else:
+                r_loc = param_r_loc[i]
+                # localisation using the Gaspari-Cohn localisation function:
+                rho_i = GC(haversine_distance(param_latlon[i,:],data_latlon),r_loc)
+        # second option: pseudo optimal localization
+        # see e.g. Lacerda et al. (2019), Furrer et al. (2007)
+        elif loc_type == 'POL':
+            ci = del_M[i,:]@(del_D[:,:].T)
+            rho_i = ci**2 / (ci**2 + (ci**2+(c_ii[i]*c_jj)/n_ensemble) )
+            mask_zero = np.abs(ci) < POL_eps*np.sqrt(c_ii[i]*c_jj)
+            rho_i[mask_zero] = 0
+            
         else:
-            r_loc = param_r_loc[i]
-            # localisation using the Gaspari-Cohn localisation function:
-            rho_i = GC(haversine_distance(param_latlon[i,:],data_latlon),r_loc)
-            sum_d_localized += rho_i.sum()
-            n_param_localized_tot += 1
+            print('Warning!! Localisation method unknown. Set to POL or distance')
+            rho_i = np.ones(n_data_)
+
             
         K_i = del_M[i,:]@mat_X3
         K_rho_i = K_i * rho_i
         mat_X4 = K_rho_i @ (mat_Dobs - mat_D)
         param_a[i,:] = mat_M[i,:] + mat_X4
-    print('Observation statistics:')
-    print('Tapering global: %f' % dzeta_global)
-    print('Mean observations per localized parameter: %f' % (sum_d_localized/n_param_localized_tot) )
-    print('Mean ratio localized/global: %f' % ((sum_d_localized/n_param_localized_tot)/n_data_) )
-        
-    print('Misc.:')
-    print('n_param_global*n_data: %f' % sum_d_global)
-    print('n_param_localized*n_data_effective: %f' % sum_d_localized)
-    print('Total ratio localized/global: %f' %(sum_d_localized/sum_d_global) )
-    
+ 
     return param_a, mean_mismatch_new, alpha
+
 
 def GC(r, c):
     #Gaspari-Cohn localization function
@@ -500,37 +511,6 @@ def GC(r, c):
 
     return result
 
-def haversine_distance(loc1, loc_array):
-    """
-    Calculate the Haversine distance between a point and an array of points on the Earth
-    given their latitude and longitude in decimal degrees.
-
-    Parameters:
-    - loc1: Tuple containing the latitude and longitude of the first point (in decimal degrees).
-    - loc_array: Array of tuples, each containing the latitude and longitude of a point (in decimal degrees).
-
-    Returns:
-    - Array of distances between loc1 and each point in loc_array (in kilometers).
-    """
-    if np.isnan(loc1[0]) and np.isnan(loc1[1]):
-        distances = np.zeros(len(loc_array))
-    else:
-        # Radius of the Earth in kilometers
-        R = 6371.0
-
-        # Convert decimal degrees to radians
-        lat1_rad, lon1_rad = np.radians(loc1)
-        lat2_rad, lon2_rad = np.radians(np.array(loc_array).T)
-
-        # Haversine formula
-        dlat = lat2_rad - lat1_rad
-        dlon = lon2_rad - lon1_rad
-
-        a = np.sin(dlat / 2)**2 + np.cos(lat1_rad) * np.cos(lat2_rad) * np.sin(dlon / 2)**2
-        c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1 - a))
-
-        distances = R * c
-    return distances
 
 
 if __name__ == '__main__':
@@ -715,7 +695,7 @@ if __name__ == '__main__':
             t0 = time.time()
             _ = operator['SMAP'].interpolate_model_results(0,settings_run,indices_z=[0,1],var='SOILLIQ')#[data_mask['SMAP']]
             operator['SMAP'].plot_results(i_iter,0,settings_run,indices_z=0,var='SOILLIQ',n_plots=12,dir_figs=settings_run['dir_figs'])
-            _ = operator['FLX'].interpolate_model_results(0,settings_run)#[data_mask['FLX']]
+            _ = operator['FLX'].interpolate_model_results(0,settings_run,retain_history=True)#[data_mask['FLX']]
             operator['FLX'].plot_results(i_iter,0,settings_run,dir_figs=os.path.join(settings_run['dir_figs'],'FLX'))
             t1 = time.time()
             print('%f seconds for interpolating/plotting one ensemble member'%(t1-t0), flush=True)
@@ -744,7 +724,8 @@ if __name__ == '__main__':
             param_a,mean_mismatch_new,alpha = update_step_ESMDA_loc(param_f,data_f,data_measured_masked,data_var_masked,alpha,i_iter,n_iter,
                                                                     param_latlon=param_latlon,param_r_loc=param_r_loc,data_latlon=data_latlon_masked,ksi=ksi,
                                                                     dir_settings=dir_settings,dzeta_global=settings_DA['dzeta_global'],
-                                                                    factor_inflate_prior=factor_inflate_prior)
+                                                                    factor_inflate_prior=factor_inflate_prior,
+                                                                    loc_type=settings_DA['loc_type'],POL_eps=settings_DA['POL_eps'])
             t1 = time.time()
             print('%f seconds for Kalman update'%(t1-t0), flush=True)
 
@@ -813,10 +794,17 @@ if __name__ == '__main__':
 
     dir_figures_validation = os.path.join(settings_run['dir_figs'],'validation')
     for i_real in list_i_real:
-        _ = operator['SMAP'].interpolate_model_results(i_real,settings_run,indices_z=[0,1],var='SOILLIQ')
-        operator['SMAP'].plot_results(i_iter,i_real,settings_run,dir_figs=dir_figures_validation,indices_z=0,var='SOILLIQ',n_plots=24*4)
-        _ = operator['FLX'].interpolate_model_results(i_real,settings_run)
-        operator['FLX'].plot_results(i_iter,i_real,settings_run,dir_figs=dir_figures_validation)
+
+        if i_real == 0 or i_real == n_ensemble+1: #plot DA and OL
+            _ = operator['SMAP'].interpolate_model_results(i_real,settings_run,indices_z=[0,1],var='SOILLIQ')
+            _ = operator['FLX'].interpolate_model_results(i_real,settings_run,retain_history=True)
+        
+            operator['SMAP'].plot_results(i_iter,i_real,settings_run,dir_figs=dir_figures_validation,indices_z=0,var='SOILLIQ',n_plots=24*4)
+            operator['FLX'].plot_results(i_iter,i_real,settings_run,dir_figs=dir_figures_validation)
+        else:
+            _ = operator['SMAP'].interpolate_model_results(i_real,settings_run,indices_z=[0,1],var='SOILLIQ')
+            _ = operator['FLX'].interpolate_model_results(i_real,settings_run)
+        
             
     if 'FLX' in data_names and plot_members_FLX:
         operator['FLX'].plot_all_results(i_iter,settings_run,dir_figs=dir_figures_validation)

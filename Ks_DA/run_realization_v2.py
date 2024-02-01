@@ -83,10 +83,10 @@ def adjust_eclm_files(settings_run,dir_run,dir_real,settings_clm):
         dir_surf = os.path.join(dir_setup,'input_clm')
 
     # Important: define all parameters that can be assimilated by adjusting the parameter file
-    all_clm_parameters = ['fff','orgmax','medlyn_slope','medlyn_intercept',
+    all_clm_parameters = ['fff','orgmax','orgmax_v2','medlyn_slope','medlyn_intercept','medlyn_slope_v2','medlyn_intercept_v2',
                   'b_slope', 'b_intercept', 'log_psis_slope', 'log_psis_intercept', 
                   'log_ks_slope', 'log_ks_intercept', 'thetas_slope', 'thetas_intercept',
-                         'om_hydraulic','om_thermal','h2o_canopy_max','kmax', 'mineral_hydraulic','luna']
+                         'om_hydraulic','om_thermal','h2o_canopy_max','kmax', 'kmax_v2', 'mineral_hydraulic','luna']
     filename_param = 'clm5_params.c171117.nc'
     if any(i in all_clm_parameters for i in settings_clm['param_names']):
         file_param = os.path.join(dir_real,filename_param)
@@ -519,134 +519,134 @@ def setup_submit_wait(i_real,settings_run,settings_clm,settings_pfl,settings_sba
     
     dir_real = os.path.join(settings_run['dir_iter'],'R%3.3i'%i_real)
     
-    #try:
-    for i1,date_list in enumerate(date_results_iter):
+    try:
+        for i1,date_list in enumerate(date_results_iter):
 
-        if i1==0 and not settings_run['init_restart']: #'Cold' run
-            flag_restart = False
-            settings_clm['file_restart'] = ''
-            settings_pfl['icpres_type'] = 'HydroStaticPatch'
-            settings_pfl['geom_icpres_valorfile'] = 'Value'
-            settings_pfl['geom_icpres_val'] = '-2.0'
-        elif i1 ==0 and settings_run['init_restart']: #provide a IC file from another run
-            print('Restarting run from %s and %s' % (settings_clm['IC_file'],settings_pfl['IC_file']) )
-            flag_restart = True
-            if settings_clm['IC_file']:
-                settings_clm['file_restart'] = '%s' % settings_clm['IC_file'] 
-            else:
+            if i1==0 and not settings_run['init_restart']: #'Cold' run
+                flag_restart = False
                 settings_clm['file_restart'] = ''
-
-            if settings_pfl['IC_file']:
-                settings_pfl['icpres_type'] = 'NCFile'
-                settings_pfl['geom_icpres_valorfile'] = 'FileName'
-                settings_pfl['geom_icpres_val'] = '"%s"' % settings_pfl['IC_file']
-            else: #fall back to cold start
                 settings_pfl['icpres_type'] = 'HydroStaticPatch'
                 settings_pfl['geom_icpres_valorfile'] = 'Value'
                 settings_pfl['geom_icpres_val'] = '-2.0'
+            elif i1 ==0 and settings_run['init_restart']: #provide a IC file from another run
+                print('Restarting run from %s and %s' % (settings_clm['IC_file'],settings_pfl['IC_file']) )
+                flag_restart = True
+                if settings_clm['IC_file']:
+                    settings_clm['file_restart'] = '%s' % settings_clm['IC_file'] 
+                else:
+                    settings_clm['file_restart'] = ''
 
-        else: #base the initial conditions on restart file from previous date
-            flag_restart = True
-            date_list_prev = date_results_iter[i1-1]
+                if settings_pfl['IC_file']:
+                    settings_pfl['icpres_type'] = 'NCFile'
+                    settings_pfl['geom_icpres_valorfile'] = 'FileName'
+                    settings_pfl['geom_icpres_val'] = '"%s"' % settings_pfl['IC_file']
+                else: #fall back to cold start
+                    settings_pfl['icpres_type'] = 'HydroStaticPatch'
+                    settings_pfl['geom_icpres_valorfile'] = 'Value'
+                    settings_pfl['geom_icpres_val'] = '-2.0'
 
-            date_start_prev = date_list_prev[0]
-            date_end_prev = date_list_prev[-1]
-            str_date_prev = str(date_start_prev.date()).replace('-','') + '-' + str(date_end_prev.date()).replace('-','')
+            else: #base the initial conditions on restart file from previous date
+                flag_restart = True
+                date_list_prev = date_results_iter[i1-1]
+
+                date_start_prev = date_list_prev[0]
+                date_end_prev = date_list_prev[-1]
+                str_date_prev = str(date_start_prev.date()).replace('-','') + '-' + str(date_end_prev.date()).replace('-','')
+                if settings_run['spinup']:
+                    str_spinup_prev = '%3.3i_' % (i1-1)
+                else:
+                    str_spinup_prev = ''
+                dir_run_prev = os.path.join(dir_real,'run_%s%s' % (str_spinup_prev,str_date_prev) )
+
+                files_clm_restart = sorted(glob(os.path.join(dir_run_prev,'*.clm2.r.*.nc') ))
+                print(dir_run_prev)
+                print(files_clm_restart)
+                print(files_clm_restart[-1].split('.'))
+                date_restart = pd.to_datetime(os.path.basename(files_clm_restart[-1]).split('.')[-2][0:10]).date()
+                assert date_restart == date_end_prev.date(), 'Restart date does not correspond to the expected date, %s, %s' %(date_restart,date_end_prev.date() )
+                print('Restarting CLM from %s' % files_clm_restart[-1])
+                settings_clm['file_restart'] = files_clm_restart[-1]
+                settings_clm['init_interp'] == False # not necessary
+
+                if 'PFL' in settings_run['models']:
+                    settings_pfl['icpres_type'] = 'NCFile'
+                    settings_pfl['geom_icpres_valorfile'] = 'FileName'    
+                    settings_pfl['geom_icpres_val'] = sorted(glob(os.path.join(dir_run_prev,
+                                                                               'cordex%ix%i_%s.out.0*' % (settings_pfl['nx'],settings_pfl['ny'],str_date_prev))))[-1]
+
+
+            date_start_sim = date_list[0]
+            date_end_sim = date_list[-1]
+
+            ## Define the run directory, as 'run_{start_date}-{end_date}', or 'run_{integer}_{start_date}-{end_date}' in the case of a spinup with the same dates repeated
+            str_date = str(date_start_sim.date()).replace('-','') + '-' + str(date_end_sim.date()).replace('-','')
             if settings_run['spinup']:
-                str_spinup_prev = '%3.3i_' % (i1-1)
+                assert type(settings_run['spinup']) == int, 'Spinup needs to be False or an integer' 
+                print('Running in spinup mode! Repeating %i times' % settings_run['spinup'])
+                str_spinup = '%3.3i_' % i1
             else:
-                str_spinup_prev = ''
-            dir_run_prev = os.path.join(dir_real,'run_%s%s' % (str_spinup_prev,str_date_prev) )
+                str_spinup = ''
+            dir_run = os.path.join(dir_real,'run_%s%s' % (str_spinup,str_date) )
 
-            files_clm_restart = sorted(glob(os.path.join(dir_run_prev,'*.clm2.r.*.nc') ))
-            print(dir_run_prev)
-            print(files_clm_restart)
-            print(files_clm_restart[-1].split('.'))
-            date_restart = pd.to_datetime(os.path.basename(files_clm_restart[-1]).split('.')[-2][0:10]).date()
-            assert date_restart == date_end_prev.date(), 'Restart date does not correspond to the expected date, %s, %s' %(date_restart,date_end_prev.date() )
-            print('Restarting CLM from %s' % files_clm_restart[-1])
-            settings_clm['file_restart'] = files_clm_restart[-1]
-            settings_clm['init_interp'] == False # not necessary
+            ## Main loop: if the given run directory does not exist prepare and submit the run
+            if not os.path.exists(dir_run):
+                print('Preparing simulation in %s' % dir_run )
 
-            if 'PFL' in settings_run['models']:
-                settings_pfl['icpres_type'] = 'NCFile'
-                settings_pfl['geom_icpres_valorfile'] = 'FileName'    
-                settings_pfl['geom_icpres_val'] = sorted(glob(os.path.join(dir_run_prev,
-                                                                           'cordex%ix%i_%s.out.0*' % (settings_pfl['nx'],settings_pfl['ny'],str_date_prev))))[-1]
+                os.mkdir(dir_run)
 
+                copy_binaries(settings_run,dir_run)
 
-        date_start_sim = date_list[0]
-        date_end_sim = date_list[-1]
+                if 'eCLM' in settings_run['models']:
+                    settings_clm['t_total'] = date_end_sim-date_start_sim
+                    settings_clm['datetime_start'] = date_start_sim
+                    settings_clm['datetime_end'] = date_end_sim
+                    adjust_eclm_files(settings_run,dir_run,dir_real,settings_clm)
+                else: #CLM3.5-PFL
+                    settings_clm['t_total'] = date_end_sim-date_start_sim
+                    settings_clm['datetime_start'] = date_start_sim
+                    adjust_clm_files(settings_run['dir_setup'],dir_run,settings_clm)
+                    copy_oasis_files(settings_run['dir_setup'],dir_run)
 
-        ## Define the run directory, as 'run_{start_date}-{end_date}', or 'run_{integer}_{start_date}-{end_date}' in the case of a spinup with the same dates repeated
-        str_date = str(date_start_sim.date()).replace('-','') + '-' + str(date_end_sim.date()).replace('-','')
-        if settings_run['spinup']:
-            assert type(settings_run['spinup']) == int, 'Spinup needs to be False or an integer' 
-            print('Running in spinup mode! Repeating %i times' % settings_run['spinup'])
-            str_spinup = '%3.3i_' % i1
-        else:
-            str_spinup = ''
-        dir_run = os.path.join(dir_real,'run_%s%s' % (str_spinup,str_date) )
+                if 'PFL' in settings_run['models']:
+                    settings_pfl['t_total'] = date_end_sim-date_start_sim
+                    settings_pfl['filename_pfl_out'] = 'cordex%ix%i_%s' % (settings_pfl['nx'],settings_pfl['ny'],str_date)
+                    adjust_parflow_files(settings_run['dir_setup'],dir_run,
+                                         settings_run['dir_build'],settings_run['dir_binaries'],
+                                         dir_real,settings_pfl)
+                    make_parflow_executable(dir_run,settings_run)
 
-        ## Main loop: if the given run directory does not exist prepare and submit the run
-        if not os.path.exists(dir_run):
-            print('Preparing simulation in %s' % dir_run )
-
-            os.mkdir(dir_run)
-
-            copy_binaries(settings_run,dir_run)
-
-            if 'eCLM' in settings_run['models']:
-                settings_clm['t_total'] = date_end_sim-date_start_sim
-                settings_clm['datetime_start'] = date_start_sim
-                settings_clm['datetime_end'] = date_end_sim
-                adjust_eclm_files(settings_run,dir_run,dir_real,settings_clm)
-            else: #CLM3.5-PFL
-                settings_clm['t_total'] = date_end_sim-date_start_sim
-                settings_clm['datetime_start'] = date_start_sim
-                adjust_clm_files(settings_run['dir_setup'],dir_run,settings_clm)
-                copy_oasis_files(settings_run['dir_setup'],dir_run)
-
-            if 'PFL' in settings_run['models']:
-                settings_pfl['t_total'] = date_end_sim-date_start_sim
-                settings_pfl['filename_pfl_out'] = 'cordex%ix%i_%s' % (settings_pfl['nx'],settings_pfl['ny'],str_date)
-                adjust_parflow_files(settings_run['dir_setup'],dir_run,
-                                     settings_run['dir_build'],settings_run['dir_binaries'],
-                                     dir_real,settings_pfl)
-                make_parflow_executable(dir_run,settings_run)
-
-                adjust_oasis_files(dir_run,settings_run,settings_clm,settings_pfl)
+                    adjust_oasis_files(dir_run,settings_run,settings_clm,settings_pfl)
 
 
-            adjust_run_files(settings_run,dir_run,settings_clm,settings_pfl,settings_sbatch)
+                adjust_run_files(settings_run,dir_run,settings_clm,settings_pfl,settings_sbatch)
 
-            os.chdir(dir_run)
-            start_run(settings_run)
-            ## in tsmp_slm_run.bsh, a file ready.txt is written at the end of the run: wait for this file
-            wait_for_run(dir_run,settings_sbatch) 
-            os.chdir(settings_run['dir_setup'])
+                os.chdir(dir_run)
+                start_run(settings_run)
+                ## in tsmp_slm_run.bsh, a file ready.txt is written at the end of the run: wait for this file
+                wait_for_run(dir_run,settings_sbatch) 
+                os.chdir(settings_run['dir_setup'])
 
-            if settings_run['ndays_spinup'] is not None and i1 == 0:
-                # i1 is the spinup -> results not useful, remove
-                settings_run_ = copy.deepcopy(settings_run) #make deep copy: otherwise all files will be removed next iterations 
-                settings_run_['files_remove'].append('*.clm2.h[0-2].*.nc')
+                if settings_run['ndays_spinup'] is not None and i1 == 0:
+                    # i1 is the spinup -> results not useful, remove
+                    settings_run_ = copy.deepcopy(settings_run) #make deep copy: otherwise all files will be removed next iterations 
+                    settings_run_['files_remove'].append('*.clm2.h[0-2].*.nc')
+                else:
+                    settings_run_ = copy.deepcopy(settings_run)
+                remove_misc_files(dir_run,settings_run_)
+
+                # ## Last step: move the run directory to storage (scratch), and keep a link
+                # if not os.path.exists(settings_run['dir_store']):
+                #     print('Creating dir: %s' % settings_run['dir_store'])
+                #     os.makedirs(settings_run['dir_store'])
+                # print('Moving files to storage: %s' % settings_run['dir_store'])
+                # move_and_link(dir_run,settings_run['dir_store'])
+
+
             else:
-                settings_run_ = copy.deepcopy(settings_run)
-            remove_misc_files(dir_run,settings_run_)
+                print('%s exists, continuing...' % dir_run) 
 
-            # ## Last step: move the run directory to storage (scratch), and keep a link
-            # if not os.path.exists(settings_run['dir_store']):
-            #     print('Creating dir: %s' % settings_run['dir_store'])
-            #     os.makedirs(settings_run['dir_store'])
-            # print('Moving files to storage: %s' % settings_run['dir_store'])
-            # move_and_link(dir_run,settings_run['dir_store'])
-
-
-        else:
-            print('%s exists, continuing...' % dir_run) 
-   
-    #except Exception as e:
-    #    print(f"An exception occurred: {e}")
+    except Exception as e:
+       print(f"An exception occurred: {e}")
                 
             
 if __name__ == '__main__':

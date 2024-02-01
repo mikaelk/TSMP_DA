@@ -1359,6 +1359,36 @@ def generate_orgmax(i_real,settings_gen,settings_run):
     data.to_netcdf(file_out_tmp)
     data.close()
     shutil.move(file_out_tmp,file_out)  
+   
+def generate_orgmax_v2(i_real,settings_gen,settings_run):
+    # perturn with %
+    dir_in = settings_run['dir_DA']
+    value_log10 = np.load(os.path.join(dir_in,'orgmax_v2.param.%3.3i.%3.3i.%3.3i.npy'%(settings_gen['i_date'],settings_gen['i_iter'],i_real) ))[0]
+    value = 10**value_log10
+    
+    if value < 10:
+        print('Warning: orgmax very small')
+        value = 10.
+    if value > 300:
+        print('Warning: orgmax very large')
+        value = 300.
+        
+    dir_setup = settings_run['dir_setup']
+    dir_real = os.path.join(settings_run['dir_iter'],'R%3.3i'%i_real)
+    
+    file_in = os.path.join(dir_setup,'input_clm/clm5_params.c171117.nc')
+    file_out = os.path.join(dir_real,'clm5_params.c171117.nc') 
+    file_out_tmp = file_out + '.tmp' 
+    
+    if os.path.exists(file_out): #the param file has been adjusted already -> open it again
+        file_in = file_out
+    
+    data = xr.load_dataset(file_in)
+    data['organic_max'].values = np.array([value])
+    
+    data.to_netcdf(file_out_tmp)
+    data.close()
+    shutil.move(file_out_tmp,file_out)  
     
 def generate_om_hydraulic(i_real,settings_gen,settings_run):
     # data['om_thetas_surf'] = 0.93
@@ -1451,6 +1481,34 @@ def generate_kmax(i_real,settings_gen,settings_run):
     data.close()
     shutil.move(file_out_tmp,file_out)   
     
+def generate_kmax_v2(i_real,settings_gen,settings_run):
+    
+    dir_in = settings_run['dir_DA']
+    values_log10 = np.load(os.path.join(dir_in,'kmax_v2.param.%3.3i.%3.3i.%3.3i.npy'%(settings_gen['i_date'],settings_gen['i_iter'],i_real) ))
+    values = 10**values_log10
+    
+    dir_setup = settings_run['dir_setup']
+    dir_real = os.path.join(settings_run['dir_iter'],'R%3.3i'%i_real)
+    
+    file_in = os.path.join(dir_setup,'input_clm/clm5_params.c171117.nc')
+    file_out = os.path.join(dir_real,'clm5_params.c171117.nc') 
+    file_out_tmp = file_out + '.tmp' 
+    
+    if os.path.exists(file_out): #the param file has been adjusted already -> open it again
+        file_in = file_out
+    
+#     for i_pft in np.arange(1,len(values)+1):
+#         data.kmax[:,i_pft] = values[i_pft-1]
+    
+    data = xr.load_dataset(file_in)
+    i_pfts = np.array([1,3,5,7,9,10,13,15,16]) #active pfts in the clm setup
+    for i_,i_pft in enumerate(i_pfts):
+        data.kmax[:,i_pft] = values[i_]
+    
+    data.to_netcdf(file_out_tmp)
+    data.close()
+    shutil.move(file_out_tmp,file_out)   
+
     
 def generate_luna(i_real,settings_gen,settings_run):
     
