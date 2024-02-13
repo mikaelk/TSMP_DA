@@ -30,6 +30,7 @@ Some additional files are required for the data assimilation operators, copy and
 2. Do a simple run by adjusting the above settings
     + adjust settings
     + start a screen in bash: screen -S session_name
+    + cd to DA folder, source modules.sh
     + python -u main_DA.py
     + ctrl-a-d to exit screen
     + screen -ls: view screen
