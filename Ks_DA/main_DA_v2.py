@@ -24,6 +24,7 @@ from scipy import sparse
 import matplotlib.pyplot as plt
 from scipy.stats import pearsonr
 import time
+import copy
 
 from helpers import haversine_distance
 
@@ -515,23 +516,9 @@ def GC(r, c):
 
 if __name__ == '__main__':
 
-    # which data to assimilate: 
-    data_names = settings_DA['data_names']
-    # If uncertainties are assumed constant, prescribe:
-    data_var = {'SMAP':0.04**2,
-                'FLX':None}
-    # possibility to only select a limited amount of observations using masks
-    data_nselect = settings_DA['n_data_max']
-    data_mask = {'SMAP':None, #initialize dict
-                 'FLX':None}
+
     plot_members_SMAP = 0 #set to int (iteration for which to plot members), or to False/True
     plot_members_FLX = True
-    
-    # prescribe_alpha = settings_DA['prescribe_alpha']
-    alpha = settings_DA['alpha']
-    factor_inflate = settings_DA['factor_inflate']
-    factor_inflate_prior = settings_DA['factor_inflate_prior']
-    ksi=settings_DA['cutoff_svd']
     
     ### Unpack some of the settings into variables
     # Functions that are run to initialize the parameters to be assimilated. 
@@ -542,6 +529,8 @@ if __name__ == '__main__':
     # Define parameter names; parameters values are stored in (%s.param.npy % param_name) files
     param_names = settings_DA['param_names']
 
+    # unpack some general settings
+    data_nselect = settings_DA['n_data_max']
     n_parallel = settings_DA['n_parallel']
     n_parallel_setup = settings_DA['n_parallel_setup']
     n_ensemble = settings_DA['n_ensemble']
@@ -549,16 +538,18 @@ if __name__ == '__main__':
     dir_setup = settings_run['dir_setup']
     dir_template = settings_run['dir_template']
 
-    # if prescribe_alpha:
-    #     if n_iter > 1:
-    #         alpha = n_iter*np.ones(n_iter)
-    #     elif n_iter == 8:
-    #         alpha = np.array([20.719,19.0,17.,16.,15.,9.,5.,2.5])    
-    #     else:
-    #         alpha = [1.]
-    # else:
-    #     alpha = None
+    # Some DA settings
+    alpha = settings_DA['alpha']
+    factor_inflate = settings_DA['factor_inflate']
+    factor_inflate_prior = settings_DA['factor_inflate_prior']
+    ksi=settings_DA['cutoff_svd']
 
+    # Unpack/initialize settings on DA parameters
+    data_names = settings_DA['data_names']
+    data_var = copy.deepcopy(settings_DA['data_var']) #data_var is changed in the code; make therefore deepcopy
+    data_mask = {'SMAP':None, #initialize dict
+                 'FLX':None}
+    
     '''
      1) Copy the folder template to the setup location if the destination does not exist
     '''
@@ -666,6 +657,7 @@ if __name__ == '__main__':
             n_param = len(param_f)
             print('Amount of parameters to assimilate: %i' % n_param, flush=True)
 
+            # Parallel submission -> if using single site perhaps make a single job script, using 1 node instead of many
             with mp.Pool(processes=n_parallel) as pool:
                 pool.starmap(setup_submit_wait, zip(np.arange(0,n_ensemble+1),repeat(settings_run),repeat(settings_clm),
                                                    repeat(settings_pfl),repeat(settings_sbatch),repeat(date_results_iter)) )
@@ -686,7 +678,7 @@ if __name__ == '__main__':
 
             # Operator for FLUXNET
             operator['FLX'] = operator_clm_FLX(settings_DA['file_lsm'],settings_DA['file_corner'],settings_DA['folder_FLX'],ignore_rivers=False)
-            data_measured['FLX'],data_var['FLX'],data_latlon['FLX'] = operator['FLX'].get_measurements(date_results_iter,date_DA_start=date_start_sim,return_latlon=True)
+            data_measured['FLX'],data_var['FLX'],data_latlon['FLX'] = operator['FLX'].get_measurements(date_results_iter,date_DA_start=date_start_sim,return_latlon=True,variance=settings_DA['data_var']['FLX'])
 
             # mask observations to required amount given in data_nselect
             data_mask,data_indices,n_data,data_measured_masked,data_var_masked,data_latlon_masked = mask_observations(data_names,data_measured,data_var,data_latlon,data_nselect,data_mask,factor_inflate=factor_inflate)

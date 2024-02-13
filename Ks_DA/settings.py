@@ -95,7 +95,7 @@ nz = 30 #30 for eCLM, 15 for CLM3.5
 settings_run={'models': 'eCLM', #model components to include ('eCLM' or 'CLM3.5-PFL', rest to be done..)
               'mode': 'DA', #Open Loop (OL), or with DA (adjust settings_DA, settings_gen)
               'dir_forcing':'/p/scratch/cjibg36/kaandorp2/data/ERA5_EUR-11_CLM_v2', #folder containing CLM forcing files
-              'dir_setup':'/p/scratch/cjibg36/kaandorp2/TSMP_results/eTSMP/DA_eCLM_cordex_%ix%i_v14_1y_iter3' % (nx,ny), #folder in which the case will be run
+              'dir_setup':'/p/scratch/cjibg36/kaandorp2/TSMP_results/eTSMP/DA_eCLM_cordex_%ix%i_v14_1y_iter1' % (nx,ny), #folder in which the case will be run
               'dir_build':'/p/project/cjibg36/kaandorp2/eCLM_params/', #required for parflow files
               'dir_binaries':'/p/project/cjibg36/kaandorp2/eCLM_params/eclm/bin/', #folder from which parflow/clm binaries are to be copied
               'dir_store':None, #files are moved here after the run is finished
@@ -142,11 +142,12 @@ settings_DA={'param_setup':[setup_orgmax_v2, setup_fff,setup_h2o_canopy_max,
              'n_parallel':33,  # set to n_ensemble+1 for full efficiency
              'n_parallel_setup':6, # setup is done on login node, limit the nr of processes
              'n_ensemble':64,
-             'n_iter':3,
+             'n_iter':1,
              'last_iter_ML_only':False, #evaluate most likely parameter set for last iteration only (not entire ensemble)
              'data_names':['SMAP','FLX'], #which datasets to assimilate
              'n_data_max':{'SMAP':1e6,'FLX':1e6}, #limit maximum data to assimilate per dataset
-             'alpha':None, # prescribe inflation factors (list with floats), or calculate on the fly (None)
+             'data_var':{'SMAP':0.04**2,'FLX':None}, #data variance: constant, monthly, or calculate in the operator (None)
+             'alpha':[1.], # prescribe inflation factors (list with floats), or calculate on the fly (None)
              'factor_inflate':{'SMAP':1.0,'FLX':1.0}, # add additional inflation to measurements
              'factor_inflate_prior':1.05, # inflate the ensemble spread (i.e. deviation from ensemble mean), see e.g. doi.org/10.1175/2008MWR2691.1
              'loc_type':'distance', #type of localisation applied; POL or distance (set param_r_loc)

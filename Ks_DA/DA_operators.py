@@ -358,7 +358,7 @@ class operator_clm_FLX:
     
 
     def get_measurements(self,date_results_iter,date_DA_start=datetime(1900,1,1),date_DA_end=datetime(2200,1,1),
-                         return_latlon=False,return_date=False,delimiter=';'):
+                         return_latlon=False,return_date=False,delimiter=';',variance=None):
         ### Get daily averaged fluxnet measurements 
         # outputdt in lnd_in needs to be set to daily
 
@@ -432,10 +432,19 @@ class operator_clm_FLX:
                                 pass #skip if values are 'nan', or if uncertainty is not defined (negative values)
                             else:
                                 self.data_flx[flx_name]['LE_CORR'][date_] = flx_data_.LE_CORR * 0.035
-                                self.data_flx[flx_name]['LE_RANDUNC'][date_] = flx_data_.LE_RANDUNC * 0.035
-                        
-                                if return_date:
-                                    dates_out.append(date_)
+                                
+                                if variance is None:
+                                    self.data_flx[flx_name]['LE_RANDUNC'][date_] = flx_data_.LE_RANDUNC * 0.035
+                                elif type(variance) == float:
+                                    self.data_flx[flx_name]['LE_RANDUNC'][date_] = np.sqrt(variance)
+                                elif type(variance) == list or type(variance) == np.ndarray:
+                                    month_ = date_.month
+                                    self.data_flx[flx_name]['LE_RANDUNC'][date_] = np.sqrt(variance[month_-1])
+                                else:
+                                    raise RuntimeError('argument variance should be None (use ICOS LE_RANDUNC), float, or monthly array')
+            
+                                # if return_date:
+                                dates_out.append(date_)
             
             lats_out = np.append(lats_out,flx_lat*np.ones(len(self.data_flx[flx_name]['LE_CORR'].keys())) )
             lons_out = np.append(lons_out,flx_lon*np.ones(len(self.data_flx[flx_name]['LE_CORR'].keys())) )
@@ -444,15 +453,17 @@ class operator_clm_FLX:
                 print('No corrected LE values found for %s' % flx_name)
                 del self.data_flx[flx_name]
 
+        variance_return = self.flatten_y(self.data_flx,var_='LE_RANDUNC')**2
+        
         # return self.flatten_y(self.sm_out)
         if return_latlon and not return_date:
-            return self.flatten_y(self.data_flx,var_='LE_CORR'),self.flatten_y(self.data_flx,var_='LE_RANDUNC')**2, \
+            return self.flatten_y(self.data_flx,var_='LE_CORR'), variance_return, \
                     np.array([lats_out, lons_out]).T
         elif return_latlon and return_date:
-            return self.flatten_y(self.data_flx,var_='LE_CORR'),self.flatten_y(self.data_flx,var_='LE_RANDUNC')**2, \
+            return self.flatten_y(self.data_flx,var_='LE_CORR'), variance_return, \
                     np.array([lats_out, lons_out]).T, dates_out            
         else:
-            return self.flatten_y(self.data_flx,var_='LE_CORR'),self.flatten_y(self.data_flx,var_='LE_RANDUNC')**2    
+            return self.flatten_y(self.data_flx,var_='LE_CORR'), variance_return**2    
     
     
     def interpolate_model_results(self,i_real,settings_run,var='QFLX_EVAP_TOT',history_stream='h2',file_type='pft',retain_history=False):
@@ -596,6 +607,7 @@ class operator_clm_FLX:
             plt.figure(figsize=(12,8))
             plt.errorbar(self.data_flx[flx_name]['LE_CORR'].keys(),self.data_flx[flx_name]['LE_CORR'].values(),
                          list(self.data_flx[flx_name]['LE_RANDUNC'].values()),fmt='o',capsize=2)
+                
             plt.plot(list(self.data_TSMP_i[flx_name].keys()),list(self.data_TSMP_i[flx_name].values()),'ko')
             R = pearsonr(list(self.data_flx[flx_name]['LE_CORR'].values()),list(self.data_TSMP_i[flx_name].values()))[0]
             rmse = np.sqrt(np.mean((np.array(list(self.data_flx[flx_name]['LE_CORR'].values()))-np.array(list(self.data_TSMP_i[flx_name].values())))**2))
@@ -656,7 +668,7 @@ class operator_clm_FLX:
             plt.figure(figsize=(12,8))
             plt.errorbar(self.data_flx[flx_name]['LE_CORR'].keys(),self.data_flx[flx_name]['LE_CORR'].values(),
                          list(self.data_flx[flx_name]['LE_RANDUNC'].values()),fmt='o',capsize=2)
-            
+                
             lstyles = ['-','--',':','-.']
             for i_real in self.data_TSMP_all.keys(): 
                 i_style = (int(i_real)//20)%4 #only 4 linestyles available
