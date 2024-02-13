@@ -79,13 +79,13 @@ def date_range_noleap(*args, **kwargs):
 '''
 ### USER INPUT ###
 '''  
-date_start = datetime(2019,1,1,20,0,0)
-date_end = datetime(2019,12,31,20,0,0)
+date_start = datetime(2019,5,1,20,0,0)
+date_end = datetime(2019,6,1,20,0,0)
 freq_output = '3d'#'3d' 
 freq_iter = 1 # int or string, e.g. 'AS','3MS','AS-MAY'  Set this to 1, unless you want to run iterative DA
 freq_restart = 1 # int or string, e.g. '7d','AS','MS' # AS = annual, start of year (see pandas date_range freq options)
-ndays_spinup = 6*30 #3*30 # set to multiple of freq_output! or to None
-ndays_validation = 365# 12*30 # after parameter calibration, run for n days to check validation data
+ndays_spinup = 3*30 #3*30 # set to multiple of freq_output! or to None
+ndays_validation = 30# 12*30 # after parameter calibration, run for n days to check validation data
 
 time_couple = timedelta(seconds=3600) # coupling, don't change this - or check coup_oas.tcl carefully (e.g. baseunit) - pfl units are in hours
 nx = 444 #111,222,444
@@ -95,11 +95,11 @@ nz = 30 #30 for eCLM, 15 for CLM3.5
 settings_run={'models': 'eCLM', #model components to include ('eCLM' or 'CLM3.5-PFL', rest to be done..)
               'mode': 'DA', #Open Loop (OL), or with DA (adjust settings_DA, settings_gen)
               'dir_forcing':'/p/scratch/cjibg36/kaandorp2/data/ERA5_EUR-11_CLM_v2', #folder containing CLM forcing files
-              'dir_setup':'/p/scratch/cjibg36/kaandorp2/TSMP_results/eTSMP/DA_eCLM_cordex_%ix%i_v14_1y_iter1' % (nx,ny), #folder in which the case will be run
+              'dir_setup':'/p/scratch/cjibg36/kaandorp2/TSMP_results/eTSMP/DA_test_clean_v1', #folder in which the case will be run
               'dir_build':'/p/project/cjibg36/kaandorp2/eCLM_params/', #required for parflow files
               'dir_binaries':'/p/project/cjibg36/kaandorp2/eCLM_params/eclm/bin/', #folder from which parflow/clm binaries are to be copied
               'dir_store':None, #files are moved here after the run is finished
-              'dir_template':'/p/project/cjibg36/kaandorp2/eTSMP_setups/setup_eclm_cordex_%ix%i_v8/' % (nx,ny), #folder containing all clm/pfl/oasis/namelist files, where everything with 2 underscores (__variable__) needs to be filled out 
+              'dir_template':'/p/project/cjibg36/kaandorp2/eTSMP_setups/setup_eclm_cordex_444x432_v8/', #folder containing all clm/pfl/oasis/namelist files, where everything with 2 underscores (__variable__) needs to be filled out 
               'spinup':False, # integer (how many times to repeat the interval from date_start to date_end) or set to False
               'init_restart':True, #Set to true if you have initial restart files available for CLM/PFL, and set them correctly in the 2 lines below
               'env_file':'/p/project/cjibg36/kaandorp2/eTSMP/env/jsc.2023_Intel.sh', # file containing modules, os.path.join(dir_build,'bldsva/machines/JUWELS/loadenvs.Intel'
@@ -117,8 +117,8 @@ n_proc_pfl_y = 9 #6,9,11,12,15
 n_proc_pfl_z = 1
 n_proc_clm = 48 #12,15,23,48,63
 sbatch_account = 'jibg36'
-sbatch_partition = 'batch' #batch
-sbatch_time = '0-03:00:00' #1-00:00:00 
+sbatch_partition = 'devel' #batch
+sbatch_time = '0-01:00:00' #1-00:00:00 
 sbatch_check_sec = 60*5 #check every n seconds if the simulation is done
 
 
@@ -139,15 +139,15 @@ settings_DA={'param_setup':[setup_orgmax_v2, setup_fff,setup_h2o_canopy_max,
                             np.nan, np.nan,
                             np.nan, np.nan, np.nan, np.nan,
                             12.500*16,12.500*16,12.500*16], #localisation radius in km
-             'n_parallel':33,  # set to n_ensemble+1 for full efficiency
-             'n_parallel_setup':6, # setup is done on login node, limit the nr of processes
-             'n_ensemble':64,
-             'n_iter':1,
+             'n_parallel':4,  # set to n_ensemble+1 for full efficiency
+             'n_parallel_setup':4, # setup is done on login node, limit the nr of processes
+             'n_ensemble':3,
+             'n_iter':2,
              'last_iter_ML_only':False, #evaluate most likely parameter set for last iteration only (not entire ensemble)
              'data_names':['SMAP','FLX'], #which datasets to assimilate
              'n_data_max':{'SMAP':1e6,'FLX':1e6}, #limit maximum data to assimilate per dataset
              'data_var':{'SMAP':0.04**2,'FLX':None}, #data variance: constant, monthly, or calculate in the operator (None)
-             'alpha':[1.], # prescribe inflation factors (list with floats), or calculate on the fly (None)
+             'alpha':None, # prescribe inflation factors (list with floats), or calculate on the fly (None)
              'factor_inflate':{'SMAP':1.0,'FLX':1.0}, # add additional inflation to measurements
              'factor_inflate_prior':1.05, # inflate the ensemble spread (i.e. deviation from ensemble mean), see e.g. doi.org/10.1175/2008MWR2691.1
              'loc_type':'distance', #type of localisation applied; POL or distance (set param_r_loc)
