@@ -2,7 +2,7 @@
 
 ![schematic structure TSMP_DA](https://github.com/mikaelk/TSMP_DA/blob/master/TSMP_DA.png?raw=true)
 
-
+**Main steps to get the data assimilation working**
 First install eCLM, and copy important files:
 1. Install eCLM with parameter changes: https://github.com/mikaelk/eCLM, up to and including the cmake steps (namelist generator not required), into your $eCLM_dir
 2. Copy the forcing data from /p/largedata/jibg36/kaandorp2/setup_TSMP_DA/ERA5_EUR-11_CLM/ to your $forcing_dir
@@ -24,7 +24,7 @@ Some additional files are required for the data assimilation operators, copy and
 3. Land/sea mask (settings_DA['file_lsm']), copy from /p/largedata/jibg36/kaandorp2/setup_TSMP_DA/static/
 4. File with grid corner points (settings_DA['file_corner']) , copy from /p/largedata/jibg36/kaandorp2/setup_TSMP_DA/static/
 
-To do together:
+**To do together**:
 1. Show jupyter notebook, easy debugging and checking output figures
 
 2. Do a simple run by adjusting the above settings
@@ -40,3 +40,8 @@ To do together:
     + Include the parameter in generate_parameters.py
     + Include the parameter in the header of settings.py
     + Include the parameter in run_realization.py
+    
+**Extra**
+when adjusting eCLM source code, you can rebuild the code by using
+1. cd ${BUILD_DIR}
+2. make -j8 install
