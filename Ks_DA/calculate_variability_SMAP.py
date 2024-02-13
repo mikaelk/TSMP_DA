@@ -47,12 +47,14 @@ def haversine_distance(loc1, loc_array):
 from DA_operators import operator_clm_SMAP, operator_clm_FLX
 from settings import settings_run,settings_clm,settings_pfl,settings_sbatch,settings_DA,settings_gen,date_results_binned,freq_output,date_range_noleap
 
-pickle_filename = 'variability_calculations/variability_SMAP_0-40cells.pkl'
-x_lower = np.linspace(0,12.5*40,1+(10))
+pickle_filename = 'variability_calculations/variability_SMAP_48-80cells.pkl'
+# x_lower = np.linspace(0,12.5*40,1+(10))
+# x_upper = x_lower + 12.5
+x_lower = np.arange(600,1100,100)
 x_upper = x_lower + 12.5
 print(x_lower)
 print(x_upper)
-
+c
 date_results_iter = [pd.date_range(datetime(2019,1,1),datetime(2019,12,31),freq='7d')]
 operator = {}
 data_measured = {}

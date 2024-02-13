@@ -95,29 +95,33 @@ def write_parameters(parameters,settings_gen,settings_run):
 def plot_results_ml(operator,settings_gen,settings_run):
 
     for date_ in operator.data_TSMP_ml.keys():
-
-        str_date = str(date_.date())
         
-        min_ = min(min(operator.data_TSMP_ml[date_]),min(operator.sm_out[date_]))
-        max_ = max(max(operator.data_TSMP_ml[date_]),max(operator.sm_out[date_]))
-        R = pearsonr(operator.data_TSMP_ml[date_],operator.sm_out[date_])[0]
-        plt.figure(figsize=(5,5))
-        plt.plot(operator.data_TSMP_ml[date_],operator.sm_out[date_],'o',alpha=.7,markersize=3)
-        plt.plot([min_,max_],[min_,max_],'k:')
-        plt.xlabel('Modelled soil moisture')
-        plt.ylabel('SMAP soil moisture')
-        plt.title('%s, R=%3.3f (mean param. values)' % (date_,R) )
-        plt.savefig(os.path.join(settings_run['dir_figs'],'corr_%s_%3.3i.png'%(str_date,settings_gen['i_iter']) ) )
+        if len(operator.data_TSMP_ml[date_])>0:
 
-        plt.figure()
-        plt.pcolormesh(operator.grid_TSMP['lon_corner'],operator.grid_TSMP['lat_corner'],operator.grid_TSMP['lsm']==2,cmap=plt.cm.Greys,vmax=2 )
-        diff = operator.sm_out[date_] - operator.data_TSMP_ml[date_]
-        diff_max = max(np.abs(diff))
-        plt.scatter(operator.lons_out[date_],operator.lats_out[date_],s=10,c=diff,vmin=-diff_max,vmax=diff_max,cmap=plt.cm.bwr)
-        cbar = plt.colorbar()
-        cbar.set_label('SMAP - TSMP (mean param. values)')
-        plt.savefig(os.path.join(settings_run['dir_figs'],'mismatch_%s_%3.3i.png'%(str_date,settings_gen['i_iter']) ) )
-  
+            str_date = str(date_.date())
+
+            min_ = min(min(operator.data_TSMP_ml[date_]),min(operator.sm_out[date_]))
+            max_ = max(max(operator.data_TSMP_ml[date_]),max(operator.sm_out[date_]))
+            R = pearsonr(operator.data_TSMP_ml[date_],operator.sm_out[date_])[0]
+            plt.figure(figsize=(5,5))
+            plt.plot(operator.data_TSMP_ml[date_],operator.sm_out[date_],'o',alpha=.7,markersize=3)
+            plt.plot([min_,max_],[min_,max_],'k:')
+            plt.xlabel('Modelled soil moisture')
+            plt.ylabel('SMAP soil moisture')
+            plt.title('%s, R=%3.3f (mean param. values)' % (date_,R) )
+            plt.savefig(os.path.join(settings_run['dir_figs'],'corr_%s_%3.3i.png'%(str_date,settings_gen['i_iter']) ) )
+
+            plt.figure()
+            plt.pcolormesh(operator.grid_TSMP['lon_corner'],operator.grid_TSMP['lat_corner'],operator.grid_TSMP['lsm']==2,cmap=plt.cm.Greys,vmax=2 )
+            diff = operator.sm_out[date_] - operator.data_TSMP_ml[date_]
+            # diff_max = max(np.abs(diff))
+            diff_max = 0.4
+            plt.scatter(operator.lons_out[date_],operator.lats_out[date_],s=10,c=diff,vmin=-diff_max,vmax=diff_max,cmap=plt.cm.bwr)
+            cbar = plt.colorbar(extend='both')
+            cbar.set_label('SMAP - TSMP (mean param. values)')
+            plt.savefig(os.path.join(settings_run['dir_figs'],'mismatch_%s_%3.3i.png'%(str_date,settings_gen['i_iter']) ) )
+
+            plt.close('all')
         
         
 data_names = ['SMAP']
