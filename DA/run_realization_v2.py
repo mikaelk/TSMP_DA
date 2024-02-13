@@ -17,6 +17,20 @@ v2.2: should be compatible with all parameters enabled/disabled
 v2.3: compatible with eCLM
 '''
 
+#########################################################################################################
+### Important: when adding parameters to be assimilated, add their names in one of the arrays below ###
+
+# Very important: define all parameters that can be assimilated by adjusting the parameter file (clm5_params.c171117.nc)
+all_clm_parameters = ['fff','orgmax','orgmax_v2','medlyn_slope','medlyn_intercept','medlyn_slope_v2','medlyn_intercept_v2',
+              'b_slope', 'b_intercept', 'log_psis_slope', 'log_psis_intercept', 
+              'log_ks_slope', 'log_ks_intercept', 'thetas_slope', 'thetas_intercept',
+                     'om_hydraulic','om_thermal','h2o_canopy_max','kmax', 'kmax_v2', 'mineral_hydraulic','luna']
+
+# Very important: define all parameters that can be assimilated by adjusting the surface file (surfdata_EUR-11....nc)
+all_clm_surfparameters = ['sandfrac_anom','clayfrac_anom','orgfrac_anom']
+#########################################################################################################
+
+
 def copy_binaries(settings_run,dir_run):
    
     dir_binaries = settings_run['dir_binaries']
@@ -77,21 +91,25 @@ def adjust_eclm_files(settings_run,dir_run,dir_real,settings_clm):
         # filename_landfrac = 'domain.lnd.EUR-11_EUR-11.230216_landfrac.nc'
         # filename_surf = 'surfdata_EUR-11_hist_16pfts_Irrig_CMIP6_simyr2000_c230808_GLC2000.nc'
     
-    if 'sandfrac_anom' in settings_clm['param_names'] or 'clayfrac_anom' in settings_clm['param_names'] or 'orgfrac_anom' in settings_clm['param_names']:
+    #IF a parameter from the surface file needs to be assimilated, the surfdata_*.nc is located inside of the realization directory
+    if any(i in all_clm_surfparameters for i in settings_clm['param_names']): 
         dir_surf = dir_real
+    # otherwise use the standard (template dir) location
     else:
         dir_surf = os.path.join(dir_setup,'input_clm')
+  
+    # if 'sandfrac_anom' in settings_clm['param_names'] or 'clayfrac_anom' in settings_clm['param_names'] or 'orgfrac_anom' in settings_clm['param_names']:
+    #     dir_surf = dir_real
+    # else:
+    #     dir_surf = os.path.join(dir_setup,'input_clm')
 
-    # Important: define all parameters that can be assimilated by adjusting the parameter file
-    all_clm_parameters = ['fff','orgmax','orgmax_v2','medlyn_slope','medlyn_intercept','medlyn_slope_v2','medlyn_intercept_v2',
-                  'b_slope', 'b_intercept', 'log_psis_slope', 'log_psis_intercept', 
-                  'log_ks_slope', 'log_ks_intercept', 'thetas_slope', 'thetas_intercept',
-                         'om_hydraulic','om_thermal','h2o_canopy_max','kmax', 'kmax_v2', 'mineral_hydraulic','luna']
     filename_param = 'clm5_params.c171117.nc'
-    if any(i in all_clm_parameters for i in settings_clm['param_names']):
+    #IF a parameter needs to be assimilated, make a copy of the clm5_params.c171117.nc file into the realization directory
+    if any(i in all_clm_parameters for i in settings_clm['param_names']): 
         file_param = os.path.join(dir_real,filename_param)
         if not os.path.exists(file_param):
             shutil.copyfile(os.path.join(dir_setup,'input_clm/%s'%filename_param), file_param )
+    #IF no parameters need to be assimilated at all, use the standard clm5_params.c171117.nc file from the template folder
     else:
         file_param = os.path.join(dir_setup,'input_clm/%s'%filename_param)
     
