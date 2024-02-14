@@ -1,80 +1,20 @@
 from datetime import datetime, timedelta
 import pandas as pd
 import numpy as np
-from setup_parameters import setup_Ks,setup_Ks_tensor,setup_Ks_anom,setup_n_anom,setup_a_anom,setup_poros_anom,setup_slope_anom
-from setup_parameters import setup_sandfrac_anom, setup_clayfrac_anom, setup_orgfrac_anom, setup_medlyn_slope, setup_medlyn_intercept, setup_medlyn_slope_v2, setup_medlyn_intercept_v2, setup_fff, setup_orgmax, setup_orgmax_v2
-from setup_parameters import setup_b_slope, setup_b_intercept, setup_log_psis_slope, setup_log_psis_intercept, setup_log_ks_slope, setup_log_ks_intercept, setup_thetas_slope, setup_thetas_intercept, setup_om_hydraulic, setup_h2o_canopy_max, setup_kmax, setup_kmax_v2, setup_mineral_hydraulic, setup_luna
-
-from generate_parameters import generate_Ks,generate_Ks_tensor,generate_Ks_anom,generate_n_anom,generate_a_anom,generate_poros_anom,generate_slope_anom
-from generate_parameters import generate_sandfrac_anom, generate_clayfrac_anom, generate_orgfrac_anom, generate_medlyn_slope, generate_medlyn_intercept, generate_medlyn_slope_v2, generate_medlyn_intercept_v2, generate_fff, generate_orgmax, generate_orgmax_v2
-from generate_parameters import generate_b_slope, generate_b_intercept, generate_log_psis_slope, generate_log_psis_intercept, generate_log_ks_slope, generate_log_ks_intercept, generate_thetas_slope, generate_thetas_intercept, generate_om_hydraulic, generate_h2o_canopy_max, generate_kmax, generate_kmax_v2, generate_mineral_hydraulic, generate_luna
 import os
+from helpers import bin_dates_by_restart_dates, date_range_noleap
 
-def bin_dates_by_restart_dates(date_results,date_restarts_in,spinup=False,avoid_big_bins=False):
-    '''
-    Function that bins date_results (dates for which results are written) into bins defined by date_restarts
-    Each bin end correspons to the next bin start (date_results_binned[0][-1] == date_results_binned[1][0])
-    Warning: last bin can contain a different amount of result files, since the total time does not necessarily bin into n integer intervals
-    '''
-    date_restarts = date_restarts_in.copy()
-    if avoid_big_bins:
-        # set to true if wanting to avoid that extra dates are contained in the last bin
-        # e.g. bin[0]: 2019-01-01 to 2020-01-01 (i.e. 1 year)
-        #      bin[1]: 2020-01-01 to 2021-04-20 (i.e. >1 year)
-        # will be:
-        # e.g. bin[0]: 2019-01-01 to 2020-01-01 (i.e. 1 year)
-        #      bin[1]: 2020-01-01 to 2021-01-01 (i.e. 1 year)
-        #      bin[2]: 2021-01-01 to 2021-04-20 (i.e. <1 year)
-        if date_results[-1] > date_restarts[-1]:
-            date_restarts.append(date_results[-1])
-        if date_results[0] != date_restarts[0]:
-            date_restarts.insert(0,date_results[0])
-            
-        
-    date_results_binned = [[]] #bin the simulation dates into the periods defined by date_restarts
-    c = 0
-    date_new_bin = date_restarts[c+1]
-    for date_ in date_results:
-        if date_ >= date_new_bin and date_ < date_restarts[-1] and date_ < date_results[-1]:
-            date_results_binned[c].append(date_) #add the first date of the next bin to the date array to have 'overlapping' dates for the restart
-            c+=1
-            date_new_bin = date_restarts[c+1]
-            date_results_binned.append([])
-        date_results_binned[c].append(date_)    
-   
-    if spinup:
-        assert date_end == date_results[-1], 'Choose an output frequency that fits n (integer) times inside of the restart frequency, e.g. 1 year sim with restart "AS" and output "MS". %s' % date_results
-        assert len(date_results_binned) == 1
-        date_results_binned = [date_results_binned[0]]*spinup
+# Below, import the parameter setup/generation functions that you defined 
+from setup_parameters import setup_sandfrac_anom, setup_clayfrac_anom, setup_orgfrac_anom, setup_medlyn_slope, setup_medlyn_intercept, setup_medlyn_slope_v2, setup_medlyn_intercept_v2, setup_fff, setup_orgmax, setup_orgmax_v2
+from setup_parameters import setup_om_hydraulic, setup_h2o_canopy_max, setup_kmax, setup_kmax_v2, setup_mineral_hydraulic, setup_luna
 
-    return date_results_binned
+from generate_parameters import generate_sandfrac_anom, generate_clayfrac_anom, generate_orgfrac_anom, generate_medlyn_slope, generate_medlyn_intercept, generate_medlyn_slope_v2, generate_medlyn_intercept_v2, generate_fff, generate_orgmax, generate_orgmax_v2
+from generate_parameters import generate_om_hydraulic, generate_h2o_canopy_max, generate_kmax, generate_kmax_v2, generate_mineral_hydraulic, generate_luna
 
+# some old parflow functions that are not used anymore, but can be useful in the future
+from setup_parameters import setup_Ks,setup_Ks_tensor,setup_Ks_anom,setup_n_anom,setup_a_anom,setup_poros_anom,setup_slope_anom
+from generate_parameters import generate_Ks,generate_Ks_tensor,generate_Ks_anom,generate_n_anom,generate_a_anom,generate_poros_anom,generate_slope_anom
 
-def date_range_noleap(*args, **kwargs):
-    # Use pd.date_range to generate the initial date range
-    date_range = pd.date_range(*args, **kwargs)
-
-    dt = date_range[1] - date_range[0]
-    
-    if dt > timedelta(days=1):
-        if 'freq' in kwargs and 'd' in kwargs['freq']: #frequency is based on the amount of days
-            # first generate daily data, then simply take every nth element
-            kwargs['freq'] = '1d'
-            date_range = pd.date_range(*args, **kwargs)
-
-            # Filter out leap days (February 29)
-            filtered_date_range_d = date_range[~((date_range.month == 2) & (date_range.day == 29))]
-
-            filtered_date_range = filtered_date_range_d[::dt.days]
-        else: #frequency is likely based on months/years, keep it as is
-            filtered_date_range = pd.date_range(*args, **kwargs)
-            
-    elif dt <= timedelta(days=1):
-        assert ((timedelta(days=1).total_seconds() / dt.total_seconds()) % 1) == 0, 'frequency should fit an integer amount of times in one day'
-        # simply remove leap day entries
-        filtered_date_range = date_range[~((date_range.month == 2) & (date_range.day == 29))]
-    
-    return filtered_date_range
 
 '''
 ### USER INPUT ###
@@ -98,7 +38,6 @@ settings_run={'models': 'eCLM', #model components to include ('eCLM' or 'CLM3.5-
               'dir_setup':'/p/scratch/cjibg36/kaandorp2/TSMP_results/eTSMP/DA_test_clean_v1', #folder in which the case will be run
               'dir_build':'/p/project/cjibg36/kaandorp2/eCLM_params/', #required for parflow files
               'dir_binaries':'/p/project/cjibg36/kaandorp2/eCLM_params/eclm/bin/', #folder from which parflow/clm binaries are to be copied
-              'dir_store':None, #files are moved here after the run is finished
               'dir_template':'/p/project/cjibg36/kaandorp2/eTSMP_setups/setup_eclm_cordex_444x432_v8/', #folder containing all clm/pfl/oasis/namelist files, where everything with 2 underscores (__variable__) needs to be filled out 
               'spinup':False, # integer (how many times to repeat the interval from date_start to date_end) or set to False
               'init_restart':True, #Set to true if you have initial restart files available for CLM/PFL, and set them correctly in the 2 lines below
@@ -108,16 +47,18 @@ settings_run={'models': 'eCLM', #model components to include ('eCLM' or 'CLM3.5-
               'ndays_validation':ndays_validation,
               'remove_hist_files':['h1','h2']} #set to None, or one of the history filestream names if they are to be removed
 
+# Initial condition files for CLM/PFL
 IC_file_CLM = '/p/scratch/cjibg36/kaandorp2/TSMP_results/eTSMP/OL_eclm_cordex_444x432/R000/run_009_20180101-20190101/EU11.clm2.r.2019-01-01-00000.nc'
 IC_file_ParFlow = False
 
-#---Some options for n_nodes(n_cores)=1(48),2(96),3(144),4(192),6(288)
+# SLURM settings. At the moment there is 1 CLM simulation per node, parflow settings are ignored when running CLM only.
+#I've commented out some possible options for n_nodes(n_cores)=1(48),2(96),3(144),4(192),6(288)
 n_proc_pfl_x = 9 #6,9,11,12,15
 n_proc_pfl_y = 9 #6,9,11,12,15
 n_proc_pfl_z = 1
 n_proc_clm = 48 #12,15,23,48,63
 sbatch_account = 'jibg36'
-sbatch_partition = 'devel' #batch
+sbatch_partition = 'devel' #batch or devel (for short <1h runs)
 sbatch_time = '0-01:00:00' #1-00:00:00 
 sbatch_check_sec = 60*5 #check every n seconds if the simulation is done
 
@@ -148,9 +89,9 @@ settings_DA={'param_setup':[setup_orgmax_v2, setup_fff,setup_h2o_canopy_max,
              'n_data_max':{'SMAP':1e6,'FLX':1e6}, #limit maximum data to assimilate per dataset
              'data_var':{'SMAP':0.04**2,'FLX':None}, #data variance: constant, monthly, or calculate in the operator (None)
              'alpha':None, # prescribe inflation factors (list with floats), or calculate on the fly (None)
-             'factor_inflate':{'SMAP':1.0,'FLX':1.0}, # add additional inflation to measurements
+             'factor_inflate':{'SMAP':1.0,'FLX':1.0}, # add additional inflation to measurements. I set these to 1 in the end, and use the option below instead
              'factor_inflate_prior':1.05, # inflate the ensemble spread (i.e. deviation from ensemble mean), see e.g. doi.org/10.1175/2008MWR2691.1
-             'loc_type':'distance', #type of localisation applied; POL or distance (set param_r_loc)
+             'loc_type':'distance', #type of localisation applied; POL or distance (set param_r_loc). POL does not seem to work better at first sight
              'dzeta_global':.4, #tapering factor
              'POL_eps':.8, #epsilon when using POL localization
              'cutoff_svd':.9, # discard small singular values, smaller = more discarding
@@ -160,9 +101,21 @@ settings_DA={'param_setup':[setup_orgmax_v2, setup_fff,setup_h2o_canopy_max,
              'folder_FLX':'/p/scratch/cjibg36/kaandorp2/data/FLUXNET'} 
 
 # settings required for the parameter generation in setup_parameters and generate_parameters
-settings_gen = {'file_indi':os.path.join(settings_run['dir_template'],'input_pf/EUR-11_TSMP_FZJ-IBG3_CLMPFLDomain_%ix%i_INDICATOR_regridded_rescaled_SoilGrids250-v2017_BGR3_alv.sa'%(nx,ny)),
-              'Ks_sample_xy': 10,
-               'Ks_sample_z': 5,
+settings_gen = {'dir_clm_surf':os.path.join(settings_run['dir_setup'],'input_clm'),
+                'file_clm_surf':'surfdata_EUR-11_hist_16pfts_Irrig_CMIP6_simyr2000_c230808_GLC2000.nc',
+                'texture_sample_xy':16,
+                'texture_start_x':8,
+                'texture_start_y':8,
+                'texture_sample_z':None,
+                'texture_plot':True,
+                'texture_anom_l':16,
+                'texture_anom_l_bounds':'fixed', #(1.2,120)
+                'texture_nu':0.5, #0.5 for exponential kernel
+                'param_length':{},
+                'perturb_frac_std':0.1,
+                'file_indi':os.path.join(settings_run['dir_template'],'input_pf/EUR-11_TSMP_FZJ-IBG3_CLMPFLDomain_%ix%i_INDICATOR_regridded_rescaled_SoilGrids250-v2017_BGR3_alv.sa'%(nx,ny)),
+                'Ks_sample_xy': 10, #OLD PFL settings below
+                'Ks_sample_z': 5,
                 'Ks_mode':'ml',
                 'Ks_plot':True,
                 'a_sample_xy': 10,
@@ -177,19 +130,7 @@ settings_gen = {'file_indi':os.path.join(settings_run['dir_template'],'input_pf/
                 'file_slopex':os.path.join(settings_run['dir_template'],'input_pf/slopex.sa'),
                 'file_slopey':os.path.join(settings_run['dir_template'],'input_pf/slopey.sa'),
                 'slope_sample_xy': 10,
-                'slope_plot':True,
-                'dir_clm_surf':os.path.join(settings_run['dir_setup'],'input_clm'),
-                'file_clm_surf':'surfdata_EUR-11_hist_16pfts_Irrig_CMIP6_simyr2000_c230808_GLC2000.nc',
-                'texture_sample_xy':16,
-                'texture_start_x':8,
-                'texture_start_y':8,
-                'texture_sample_z':None,
-                'texture_plot':True,
-                'texture_anom_l':16,
-                'texture_anom_l_bounds':'fixed', #(1.2,120)
-                'texture_nu':0.5, #0.5 for exponential kernel
-                'param_length':{},
-                'perturb_frac_std':0.1} #for parameters without a given range, perturb e.g. 10% (0.1) or 20% (0.2)
+                'slope_plot':True} #for parameters without a given range, perturb e.g. 10% (0.1) or 20% (0.2)
 
 '''
 ### END USER INPUT ###
