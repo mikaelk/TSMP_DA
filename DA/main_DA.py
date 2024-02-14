@@ -27,6 +27,15 @@ os.nice(5)
 
 
 def realize_parameters(i_real,settings_gen,settings_run,init=True,run_prior=False):
+    '''
+    This function:
+    1) in case 'init' is True, -the prior parameter settings are read (e.g. at iteration 0), 
+                               -perturbations of the parameters are created, 
+                               -parameter files are written
+                               -the parameter generation functions are called, that adjust the CLM .nc files 
+    2) in case 'init' is False, the parameter generation functions are simply called for each parameter, adjusting the .nc files
+    run_prior: if true, it simply creates a realization for the most likely prior parameter values (can be used to evaluate the prior parameter settings)
+    '''
     dir_real = os.path.join(settings_run['dir_iter'],'R%3.3i'%i_real)
     local_state = np.random.RandomState() #required for parallel processes in python
     dir_DA = settings_run['dir_DA']
@@ -71,7 +80,10 @@ def worker_realize_parameters(*args, **kwargs):
 
             
 def read_parameters(n_ensemble,settings_gen,settings_run):
-    # read parameter values of the different ensemble members into an array
+    '''
+    Read parameter values of the different ensemble members into an array
+    Additionally the lat/lon values are loaded in case localisation is necessary for the given parameter
+    '''
     param_names = []
     param_latlon = np.array([])
     param_r_loc = np.array([])
@@ -115,6 +127,10 @@ def read_parameters(n_ensemble,settings_gen,settings_run):
 
 
 def write_parameters(parameters,settings_gen,settings_run):
+    '''
+    Write parameter values of an ensemble memberto a .npy file
+    Ensemble member 0 is used for the most likely parameter values, so in this case take the mean
+    '''
     dir_DA = settings_run['dir_DA']
     for i_real in range(parameters.shape[1]):
         i_start = 0
@@ -159,9 +175,9 @@ def change_setting(filename, key, new_value):
 def check_for_success(dir_iter,dir_DA,dir_settings,date_results_iter,n_ensemble):
     '''
     This function checks if a given ensemble member finished successfully
-    If not, it moves the last ensemble memberto the failed ensemble member
+    If not, it moves the last ensemble member to the failed ensemble member
     i.e. an ensemble of size 64 would become 63
-    The run folder is moved, as well as the parameter files corresponding to the ensemble member
+    The realization folder is moved, as well as the parameter files corresponding to the ensemble member
     '''
     date_start_sim = date_results_iter[-1][0]
     date_end_sim = date_results_iter[-1][-1]
@@ -542,15 +558,12 @@ if __name__ == '__main__':
     data_mask = {'SMAP':None, #initialize dict
                  'FLX':None}
     
-    '''
-     1) Copy the folder template to the setup location if the destination does not exist
-    '''
+    # Copy the folder template to the setup location if the destination does not exist
     if not os.path.exists(dir_setup):
         print('Copying folder template from %s to %s' % (dir_template,dir_setup) )
         shutil.copytree(dir_template,dir_setup)
     else:
         print('Continuing simulation in %s' % dir_setup)
-    # os.chdir(dir_setup)
 
     # copy settings file for later use
     dir_settings = os.path.join(settings_run['dir_setup'],'settings')
@@ -558,19 +571,21 @@ if __name__ == '__main__':
         os.mkdir(dir_settings)
         shutil.copy('settings.py',dir_settings)
         
+    # directory for figure output
     dir_figs = os.path.join(dir_setup,'figures')
     settings_run['dir_figs'] = dir_figs
     if not os.path.exists(dir_figs):
         print('Creating folder to store DA information: %s' % (dir_figs) )
         os.mkdir(dir_figs)
 
+    # directory containing all the DA information: parameter prior values and their values for each ensemble member
     dir_DA = os.path.join(dir_setup,'input_DA')
     settings_run['dir_DA'] = dir_DA
     if not os.path.exists(dir_DA):
         print('Creating folder to store DA information: %s' % (dir_DA) )
         os.mkdir(dir_DA)
 
-        # setup parameters: prior/uncertainties, + static properties, lon/lat locations based on the settings if necessary
+        # setup parameters: set the prior/uncertainties, + static properties, lon/lat locations based on the settings if necessary
         for fn in param_setup:
             fn(settings_gen,settings_run)
 
@@ -679,6 +694,7 @@ if __name__ == '__main__':
             data_measured['FLX'],data_var['FLX'],data_latlon['FLX'] = operator['FLX'].get_measurements(date_results_iter,date_DA_start=date_start_sim,return_latlon=True,variance=settings_DA['data_var']['FLX'])
 
             # mask observations to required amount given in data_nselect
+            # it would be more efficient to already apply the masking in the operator.get_measurements functions
             data_mask,data_indices,n_data,data_measured_masked,data_var_masked,data_latlon_masked = mask_observations(data_names,data_measured,data_var,data_latlon,data_nselect,data_mask,factor_inflate=factor_inflate)
 
             # get most likely parameter output, to track if the iterations are improving
@@ -711,6 +727,7 @@ if __name__ == '__main__':
 
             print('Performing Kalman update...', flush=True)
             t0 = time.time()
+            #*_a: analysis, *_f: forecast
             param_a,mean_mismatch_new,alpha = update_step_ESMDA_loc(param_f,data_f,data_measured_masked,data_var_masked,alpha,i_iter,n_iter,
                                                                     param_latlon=param_latlon,param_r_loc=param_r_loc,data_latlon=data_latlon_masked,ksi=ksi,
                                                                     dir_settings=dir_settings,dzeta_global=settings_DA['dzeta_global'],
