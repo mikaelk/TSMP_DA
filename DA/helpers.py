@@ -45,6 +45,30 @@ def haversine_distance(loc1, loc_array):
         distances = R * c
     return distances
 
+
+def GC(r, c):
+    '''
+    Gaspari-Cohn localization function
+    r: np.array containing the distance
+    c: cutoff length
+    '''
+    abs_r = np.abs(r)
+    if np.isnan(c):
+        result = np.ones_like(abs_r, dtype=float)
+    else:
+        condition1 = (0 <= abs_r) & (abs_r <= c)
+        condition2 = (c <= abs_r) & (abs_r <= 2 * c)
+
+        result = np.zeros_like(abs_r, dtype=float)
+
+        result[condition1] = -1/4 * (abs_r[condition1] / c) ** 5 + 1/2 * (abs_r[condition1] / c) ** 4 + 5/8 * (abs_r[condition1] / c) ** 3 - \
+                            5/3 * (abs_r[condition1] / c) ** 2 + 1
+        result[condition2] = 1/12 * (abs_r[condition2] / c) ** 5 - 1/2 * (abs_r[condition2] / c) ** 4 + 5/8 * (abs_r[condition2] / c) ** 3 + \
+                            5/3 * (abs_r[condition2] / c) ** 2 - 5 * (abs_r[condition2] / c) + 4 - 2/3 * (c / abs_r[condition2])
+
+    return result
+
+
 def bin_dates_by_restart_dates(date_results,date_restarts_in,spinup=False,avoid_big_bins=False):
     '''
     Function that bins date_results (dates for which results are written) into bins defined by date_restarts
@@ -65,7 +89,6 @@ def bin_dates_by_restart_dates(date_results,date_restarts_in,spinup=False,avoid_
         if date_results[0] != date_restarts[0]:
             date_restarts.insert(0,date_results[0])
             
-        
     date_results_binned = [[]] #bin the simulation dates into the periods defined by date_restarts
     c = 0
     date_new_bin = date_restarts[c+1]
@@ -86,7 +109,11 @@ def bin_dates_by_restart_dates(date_results,date_restarts_in,spinup=False,avoid_
 
 
 def date_range_noleap(*args, **kwargs):
-    # Use pd.date_range to generate the initial date range
+    '''
+    Input parameters: see pd.date_range 
+    Uses pd.date_range to generate a date range
+    Checks if there are any leap days, and filters them out
+    '''
     date_range = pd.date_range(*args, **kwargs)
 
     dt = date_range[1] - date_range[0]
@@ -112,7 +139,9 @@ def date_range_noleap(*args, **kwargs):
     return filtered_date_range
 
 ###############################################################################################
-### Below ParFlow helper functions, imported from SLOTH https://github.com/HPSCTerrSys/SLOTH/
+### Below some ParFlow helper functions, imported from SLOTH https://github.com/HPSCTerrSys/SLOTH/
+###############################################################################################
+
 def readSa(file):
     """
     Reads data from a file in ASCI format and returns a NumPy array.
@@ -175,3 +204,4 @@ def writeSa(file, data):
             for j in range(ny):
                 for i in range(nx):
                     f.write(f'{data[k,j,i]}\n')
+                    

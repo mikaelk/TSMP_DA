@@ -127,9 +127,9 @@ def generate_anomaly_field(X_train,Y_train,data_indi,mode='ml',
 
     return anom_field
 
-############################################################################################
-#### Functions to generate perturbation fields for soil texture: sand, clay, organic matter
-############################################################################################
+#############################################################################################
+#### Functions to generate perturbation fields for soil texture: sand, clay, organic matter #
+#############################################################################################
 
 def generate_sandfrac_anom(i_real,settings_gen,settings_run):
     dir_real = os.path.join(settings_run['dir_iter'],'R%3.3i'%i_real)

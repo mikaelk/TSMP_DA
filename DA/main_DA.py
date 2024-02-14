@@ -8,31 +8,23 @@ from glob import glob
 import xarray as xr
 import netCDF4
 
-# from setup_parameters import setup_Ks,setup_Ks_tensor,setup_Ks_anom
-# from generate_parameters import generate_Ks,generate_Ks_tensor,generate_Ks_anom
-from run_realization_v2 import setup_submit_wait
-from DA_operators import operator_clm_SMAP, operator_clm_FLX
-
-from settings import settings_run,settings_clm,settings_pfl,settings_sbatch,settings_DA,settings_gen,date_results_binned,freq_output,date_range_noleap
-
-# from multiprocessing import Pool
 import multiprocessing as mp
-
 from itertools import repeat
 from scipy import sparse
-
 import matplotlib.pyplot as plt
 from scipy.stats import pearsonr
 import time
 import copy
 
-from helpers import haversine_distance
+from run_realization_v2 import setup_submit_wait
+from DA_operators import operator_clm_SMAP, operator_clm_FLX
+from settings import settings_run,settings_clm,settings_pfl,settings_sbatch,settings_DA,settings_gen,date_results_binned,freq_output,date_range_noleap
+from helpers import haversine_distance, GC
 
+# avoid numpy from using many threads on the login node, and set the priority low
 os.environ['MKL_NUM_THREADS'] = '4'
 os.nice(5)
-'''
-v2: test adjusting Ks tensor value
-'''
+
 
 def realize_parameters(i_real,settings_gen,settings_run,init=True,run_prior=False):
     dir_real = os.path.join(settings_run['dir_iter'],'R%3.3i'%i_real)
@@ -68,6 +60,10 @@ def realize_parameters(i_real,settings_gen,settings_run,init=True,run_prior=Fals
                 p_fn_gen(i_real,settings_gen,settings_run)
             
 def worker_realize_parameters(*args, **kwargs):
+    '''
+    I struggled a bit with 'deadlocks' where the script got stuck at some point without any errors when calling realize_parameters in parallel
+    This addition seemed to resolve the issue? Not 100% sure why
+    '''
     try:
         realize_parameters(*args, **kwargs)
     except Exception as e:
@@ -136,7 +132,13 @@ def write_parameters(parameters,settings_gen,settings_run):
         np.save(os.path.join(dir_DA,'%s.param.%3.3i.%3.3i.%3.3i'%(p_name,settings_gen['i_date'],settings_gen['i_iter']+1,0)),param_)
         i_start = i_end   
         
+        
 def change_setting(filename, key, new_value):
+    '''
+    Read the settings file, and adjust a given setting (key) with new_value
+    Used e.g. when a member failed, to change n_ensemble from 64 to 63
+    And used to put the calculated inflation factors alpha in the settings file (when wanting to re-do the simulation with the exact same inflation factors)
+    '''
     # Escape special characters in the key
     escaped_key = re.escape(key)
 
@@ -155,7 +157,12 @@ def change_setting(filename, key, new_value):
         file.write(content)
         
 def check_for_success(dir_iter,dir_DA,dir_settings,date_results_iter,n_ensemble):
-        
+    '''
+    This function checks if a given ensemble member finished successfully
+    If not, it moves the last ensemble memberto the failed ensemble member
+    i.e. an ensemble of size 64 would become 63
+    The run folder is moved, as well as the parameter files corresponding to the ensemble member
+    '''
     date_start_sim = date_results_iter[-1][0]
     date_end_sim = date_results_iter[-1][-1]
     str_date = str(date_start_sim.date()).replace('-','') + '-' + str(date_end_sim.date()).replace('-','')
@@ -299,6 +306,11 @@ def plot_prior_post(param_f,param_a,param_names_all,i_iter,dir_figs=os.path.join
 
             
 def update_step_ESMDA(param_f,data_f,data_measured,data_var,alpha,i_iter):
+    """
+    Simple ES-MDA implementation that I started out with. 
+    Can be interesting to check the workings of the algorithm without the extra optimization/localisation that was added in the update_step_ESMDA_loc
+    """
+    
     print('Calculating KG and performing parameter update...')
     assert data_f.shape[0] == len(data_measured)
     n_data_ = data_f.shape[0]
@@ -494,26 +506,6 @@ def update_step_ESMDA_loc(mat_M,mat_D,data_measured,data_var,alpha,i_iter,n_iter
     return param_a, mean_mismatch_new, alpha
 
 
-def GC(r, c):
-    #Gaspari-Cohn localization function
-    abs_r = np.abs(r)
-    if np.isnan(c):
-        result = np.ones_like(abs_r, dtype=float)
-    else:
-        condition1 = (0 <= abs_r) & (abs_r <= c)
-        condition2 = (c <= abs_r) & (abs_r <= 2 * c)
-
-        result = np.zeros_like(abs_r, dtype=float)
-
-        result[condition1] = -1/4 * (abs_r[condition1] / c) ** 5 + 1/2 * (abs_r[condition1] / c) ** 4 + 5/8 * (abs_r[condition1] / c) ** 3 - \
-                            5/3 * (abs_r[condition1] / c) ** 2 + 1
-        result[condition2] = 1/12 * (abs_r[condition2] / c) ** 5 - 1/2 * (abs_r[condition2] / c) ** 4 + 5/8 * (abs_r[condition2] / c) ** 3 + \
-                            5/3 * (abs_r[condition2] / c) ** 2 - 5 * (abs_r[condition2] / c) + 4 - 2/3 * (c / abs_r[condition2])
-
-    return result
-
-
-
 if __name__ == '__main__':
 
 
@@ -585,12 +577,20 @@ if __name__ == '__main__':
     # Read parameter length and put in dictionary here
     for param_ in param_names:
         settings_gen['param_length'][param_] = np.load(os.path.join(dir_DA,'%s.param.000.000.prior.npy' % param_) ).shape[0]
-
+    
+    ############################################################################################
     #%% ----------- DA loop -----------
 
-
-    #%% ----------- date loop -----------    
-    # this comes in the date loop, e.g. perform the smoother over a period over 1 year:
+    ############################################################################################
+    #%% ----------- date loop -----------  
+    # not implemented: 
+    # the idea was initially to do the DA over 1 year (e.g. 3 iterations), then move to the next year (e.g. 3 iterations), and so on
+    # instead I opted to do the DA for one year (2019) and use 2020 for validation
+    # A date loop can be implemented, however, by adding lists to date_results_binned
+    # The code below then goes inside of the date loop; with e.g. iterator i_date 0...N_years when performing the smoother over a period over 1 year
+    #
+    # The date loop could be interesting when converting this code to a filter algorithm instead
+    #
     i_date = 0
     date_results_iter = date_results_binned[i_date].copy()
     date_start_sim = date_results_binned[i_date][0][0]#datetime(2019,1,2,12,0,0)
@@ -600,20 +600,18 @@ if __name__ == '__main__':
     if settings_run['ndays_spinup'] is not None:
         date_results_iter.insert(0,list(date_range_noleap(date_start_sim-timedelta(days=settings_run['ndays_spinup']),date_start_sim,periods=2)))
     
-
+    # Construct a date string, used to create the folder in which results are stored
     str_date = str(date_start_sim.date()).replace('-','') + '-' + str(date_end_sim.date()).replace('-','')
     dir_date = os.path.join(dir_setup,str_date)
     if not os.path.exists(dir_date):
         print('Creating folder for dates %s: %s' % (str_date,dir_date) )
         os.mkdir(dir_date)
-
-    ## TEMP
-    # date_DA_start = date_end_sim - timedelta(days=30) # spinup, only assimilate last 30 days
-    # date_DA_start = datetime(2019,1,1,12,0,0)
     
-    mismatch_iter = [0]
+    
+    mismatch_iter = [0] #keep track of mismatch as function of iterations
+    ############################################################################################    
     #%% ----------- iteration loop -----------    
-    # this comes in the iteration loop, e.g. iterate every year n times in the optimization
+    # Iteration loop, e.g. iterate every year n times in the optimization
     for i_iter in np.arange(n_iter):
 
         # Set initialization flag to True in the first loop (for parameter initialization)
@@ -802,15 +800,6 @@ if __name__ == '__main__':
         operator['FLX'].plot_all_results(i_iter,settings_run,dir_figs=dir_figures_validation)
 
     print('---------------------------------------')
-    print('Wow, the DA actually finished, congrats')
+    print('The DA finished, congrats')
     print('---------------------------------------')
     
-    #         file_clm_last = sorted(glob(os.path.join(settings_run['dir_iter'],'R000/**/clm.clm2.r*')))[-1]
-    #         file_pfl_last = sorted(glob(os.path.join(settings_run['dir_iter'],'R000/**/*.out.*.nc')))[-1]
-
-    #         settings_pfl.update({'IC_file':file_pfl_last})
-    #         settings_clm.update({'IC_file':file_clm_last})
-
-    #         print('Resuming next iteration from CLM file %s' % file_clm_last)
-    #         print('Resuming next iteration from PFL file %s' % file_pfl_last)
-
