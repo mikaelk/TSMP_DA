@@ -46,3 +46,11 @@ Some additional files are required for the data assimilation operators, copy and
 when adjusting eCLM source code, you can rebuild the code by using
 1. cd ${BUILD_DIR}
 2. make -j8 install
+
+
+**Future steps**
+Some future steps that could be implemented:
+1. State vector DA. There are two options:
+    + Use the ensemble of the last iteration to do a offline-DA of state vectors of interest. E.g. simply let the Kalman filter take a combination of the soil moisture as predicted by the different ensemble members over a year that matches SMAP the best. The good thing is that the final ensemble is relatively bias-free, and should be centered around the observations in most locations
+    + 'online' DA: run the model for e.g. 1 week. Update the state vector, and write it back to the CLM restart file. Should be doable, but the format of the restart files needs to be looked at. The 'date loop' in main_DA.py needs to be worked out (i_date is now fixed to 0)
+2. Run eCLM in BCG mode, assimilate LAI by comparing to e.g. MODIS. A new operator would need to be implemented mapping LAI predicted by CLM to the MODIS observation locations
