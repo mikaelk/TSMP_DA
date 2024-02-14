@@ -59,13 +59,11 @@ def generate_anomaly_field(X_train,Y_train,data_indi,mode='ml',
         indi_depths = np.cumsum(eCLM_dz) - .5*eCLM_dz
     else:
         raise RuntimeError('define dz')
-    ### /parameters
 
     # indices of layers to be sampled by Kriging
     i_sample_z = np.unique(X_train[:,0])
     # fit the Gaussian Process Regressors
     gprs = fit_gprs(i_sample_z,X_train,Y_train)
-
 
     X = np.meshgrid(np.arange(0,anom_field.shape[1]),
                     np.arange(0,anom_field.shape[2]),indexing='ij')
@@ -77,11 +75,11 @@ def generate_anomaly_field(X_train,Y_train,data_indi,mode='ml',
         if mask_land is None:     
             mask_land = (data_indi[i_layer,:] < 20)
 
-        # print('Generating anomaly field for layer %i' % i_layer,flush=True)
         X_test = np.array([X[0][mask_land],
                         X[1][mask_land]]).T
 
-        if not vary_depth: #2D mode -> same anomaly for all layers
+        #2D mode -> same anomaly for all layers
+        if not vary_depth: 
             if i_layer == 0:
                 anom_ = gprs[i_layer].predict(X_test)
                 for i_layer_ in range(anom_field.shape[0]):
@@ -89,7 +87,7 @@ def generate_anomaly_field(X_train,Y_train,data_indi,mode='ml',
             else: #other layers are based on layer 0 -> pass
                 pass
             
-        # layer is sampled -> Kriging
+        # 3D mode: layer is sampled -> use Kriging to interpolate horizontally
         elif i_layer in i_sample_z:
             if mode == 'ml':
                 anom_ = gprs[i_layer].predict(X_test)
@@ -99,7 +97,7 @@ def generate_anomaly_field(X_train,Y_train,data_indi,mode='ml',
                 raise RuntimeError('Mode should be ml (most likely) or rnd (random)')
             anom_field[i_layer,mask_land] = anom_
 
-        # layer is not sampled -> interpolate linearly
+        # 3D mode: layer is not sampled -> interpolate in depth linearly
         else:
             i_lower = i_sample_z[np.digitize(i_layer,i_sample_z) - 1]
             i_upper = i_sample_z[np.digitize(i_layer,i_sample_z)]
@@ -358,7 +356,8 @@ def generate_orgfrac_anom(i_real,settings_gen,settings_run):
 
     data_texture = data_texture*(10**(anom_field)) # anomaly field: 10**-1 -> 10**0 -> 10**1: 0.1 -> 1 -> 10 (multiplicative factor)
     
-    # 1st check: organic matter density should not exceed 130 (see CLM5 parameter file: organic_max)
+    # check: organic matter density should not exceed 130 (see CLM5 parameter file: organic_max)
+    # perhaps this should be changed to read in the orgmax parameter instead, but then a check needs to be included if this parameter is actually assimilated or not
     max_organic = 130.
     data_texture[data_texture>max_organic] = max_organic
     

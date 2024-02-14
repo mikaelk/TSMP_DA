@@ -31,9 +31,7 @@ def setup_sandfrac_anom(settings_gen,settings_run):
         assert i_sample_z[-1] == data.shape[0]-1
 
     ### generate anomaly field, set uniform for now
-    # sig_log_standard = 0.046 #set 1 sigma to ~10% deviation
-    # sig_log_standard = 0.090 # 1 sigma to ~20% deviation
-    factor_perturb = 1+settings_gen['perturb_frac_std'] #e.g. 1.1, 1.2
+    factor_perturb = 1+settings_gen['perturb_frac_std'] #e.g. 1.1 (10%), 1.2 (20%) perturbation interval
     sig_log_standard = np.log10(factor_perturb)
     field_anom = sig_log_standard*np.ones(data.shape)
 
@@ -55,7 +53,7 @@ def setup_sandfrac_anom(settings_gen,settings_run):
     ### write static data: x-vals, y-vals, z-vals
     np.save(os.path.join(dir_out,'sandfrac_anom.static'),X_train)
 
-    ### write parameter data: anomaly of alpha (0) and std
+    ### write parameter data: mean anomaly of alpha (0's) and std
     np.save(os.path.join(dir_out,'sandfrac_anom.param.000.000.prior'),np.array([Y_train,Y_sigma]).T)
 
     ### Added for localization: lon/lat values of the parameter
@@ -336,6 +334,9 @@ def setup_kmax(settings_setup,settings_run):
     np.save(os.path.join(dir_out,'kmax.param.000.000.prior'),np.array([vals_mean,vals_std]).T)
     
 def setup_kmax_v2(settings_setup,settings_run):
+    '''
+    kmax
+    '''    
     dir_out = settings_run['dir_DA']
     val_min = np.log10(2e-9) #Dagon et al. (2020)
     val_max = np.log10(3.8e-8)
