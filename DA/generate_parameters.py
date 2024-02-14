@@ -14,14 +14,14 @@ def generate_anomaly_field(X_train,Y_train,data_indi,mode='ml',
     """
     Generate anomaly field using Gaussian Process Regression
     
-    X_train: [X,Y,Z] coordinates
-    Y_train: corresponding response
+    X_train: [X,Y,Z] coordinates. Called 'train' since this is used to fit the regression algorithm
+    Y_train: corresponding values at X,Y,Z
     data_indi: indicator field, used to mask ocean
-    mode: most likely (ml) or additional random noise based on Kriged function. I only used ml in the end
+    mode: most likely (ml) or additional random noise based on Kriged function. Only use ml
     shape_out: prescribe output shape
     mask_land: can be used to specify land mask (instead of getting this from the indicator file)
     length_scale: length scale of the RBF kernel
-    nu: parameter of the RBF kernel (1.5=exponential kernel)
+    nu: parameter of the RBF kernel (0.5=exponential kernel)
     vary_depth: I used False in the end for the CLM simulations, which makes the perturbations 2D (i.e. depth invariant)
     depth_setting: PFL or eCLM; used to specify the layer depths. Not required when setting vary_depth=False
     """
@@ -595,7 +595,6 @@ def generate_orgmax_v2(i_real,settings_gen,settings_run):
     '''
     The maximum organic density; rho_sc,max 
     Perturbation %-based
-
     '''    
     dir_in = settings_run['dir_DA']
     value_log10 = np.load(os.path.join(dir_in,'orgmax_v2.param.%3.3i.%3.3i.%3.3i.npy'%(settings_gen['i_date'],settings_gen['i_iter'],i_real) ))[0]
@@ -740,9 +739,6 @@ def generate_kmax_v2(i_real,settings_gen,settings_run):
     
     if os.path.exists(file_out): #the param file has been adjusted already -> open it again
         file_in = file_out
-    
-#     for i_pft in np.arange(1,len(values)+1):
-#         data.kmax[:,i_pft] = values[i_pft-1]
     
     data = xr.load_dataset(file_in)
     i_pfts = np.array([1,3,5,7,9,10,13,15,16]) #active pfts in the clm setup
