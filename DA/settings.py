@@ -22,14 +22,14 @@ from generate_parameters import generate_Ks,generate_Ks_tensor,generate_Ks_anom,
 date_start = datetime(2019,5,1,20,0,0)
 date_end = datetime(2019,6,1,20,0,0)
 freq_output = '3d'#'3d' 
-freq_iter = 1 # int or string, e.g. 'AS','3MS','AS-MAY'  Set this to 1, unless you want to run iterative DA
-freq_restart = 1 # int or string, e.g. '7d','AS','MS' # AS = annual, start of year (see pandas date_range freq options)
-ndays_spinup = 3*30 #3*30 # set to multiple of freq_output! or to None
+freq_iter = 1 # int or string, e.g. 'AS','3MS','AS-MAY'  Set this to 1. The idea is that this allows for running the updates (iterative smoother) sequentially. For this the 'date loop' in main_DA needs to be implemented
+freq_restart = 1 # int or string, e.g. '7d','AS','MS' This can be set to e.g. 2 in the case of long simulations, to keep the simulation time below the maximum slurm walltime of 1 day, by breaking the simulation into 2 parts
+ndays_spinup = 3*30 #3*30 # spinup in days. Set to multiple of freq_output! or to None
 ndays_validation = 30# 12*30 # after parameter calibration, run for n days to check validation data
 
-time_couple = timedelta(seconds=3600) # coupling, don't change this - or check coup_oas.tcl carefully (e.g. baseunit) - pfl units are in hours
-nx = 444 #111,222,444
-ny = 432 #108,216,432
+time_couple = timedelta(seconds=3600) # coupling (CLM-PFL), don't change this - or check coup_oas.tcl carefully (e.g. baseunit) - pfl units are in hours
+nx = 444 #number of gridpoints
+ny = 432 
 nz = 30 #30 for eCLM, 15 for CLM3.5
 
 settings_run={'models': 'eCLM', #model components to include ('eCLM' or 'CLM3.5-PFL', rest to be done..)
