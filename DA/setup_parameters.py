@@ -249,6 +249,18 @@ def setup_fff(settings_setup,settings_run):
     val_mean = .5*(val_min+val_max)
     val_std = (val_mean-val_min)/n_sigma
     np.save(os.path.join(dir_out,'fff.param.000.000.prior'),np.array([[val_mean],[val_std]]).T)
+ 
+def setup_d_max(settings_setup,settings_run):
+    '''
+    d_max (dry surface layer parameter)
+    '''
+    dir_out = settings_run['dir_DA']
+    val_min = np.log10(10) #Dagon et al. (2020)
+    val_max = np.log10(60)
+    n_sigma = 2 #define the interal between min and max as the 95% CI
+    val_mean = .5*(val_min+val_max)
+    val_std = (val_mean-val_min)/n_sigma
+    np.save(os.path.join(dir_out,'d_max.param.000.000.prior'),np.array([[val_mean],[val_std]]).T)
      
 def setup_mineral_hydraulic(settings_setup,settings_run):
     '''

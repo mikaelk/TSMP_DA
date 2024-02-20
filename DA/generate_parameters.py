@@ -515,6 +515,32 @@ def generate_fff(i_real,settings_gen,settings_run):
     shutil.move(file_out_tmp,file_out)   
     
     
+def generate_d_max(i_real,settings_gen,settings_run):
+    '''
+    d_max
+    '''
+    dir_in = settings_run['dir_DA']
+    value_log10 = np.load(os.path.join(dir_in,'d_max.param.%3.3i.%3.3i.%3.3i.npy'%(settings_gen['i_date'],settings_gen['i_iter'],i_real) ))[0]
+    value = 10**value_log10
+    
+    dir_setup = settings_run['dir_setup']
+    dir_real = os.path.join(settings_run['dir_iter'],'R%3.3i'%i_real)
+    
+    file_in = os.path.join(dir_setup,'input_clm/clm5_params.c171117.nc')
+    file_out = os.path.join(dir_real,'clm5_params.c171117.nc') 
+    file_out_tmp = file_out + '.tmp' 
+    
+    if os.path.exists(file_out): #the param file has been adjusted already -> open it again
+        file_in = file_out
+    
+    data = xr.load_dataset(file_in)
+    data['d_max'] = value
+    
+    data.to_netcdf(file_out_tmp)
+    data.close()
+    shutil.move(file_out_tmp,file_out)   
+    
+    
 def generate_mineral_hydraulic(i_real,settings_gen,settings_run):
     '''
     Mineral hydraulic parameters, based on Cosby 1984
