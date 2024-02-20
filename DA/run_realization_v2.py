@@ -22,9 +22,9 @@ v2.3: compatible with eCLM
 
 # Very important: define all parameters that can be assimilated by adjusting the parameter file (clm5_params.c171117.nc)
 all_clm_parameters = ['fff','orgmax','orgmax_v2','medlyn_slope','medlyn_intercept','medlyn_slope_v2','medlyn_intercept_v2',
-              'b_slope', 'b_intercept', 'log_psis_slope', 'log_psis_intercept', 
-              'log_ks_slope', 'log_ks_intercept', 'thetas_slope', 'thetas_intercept',
-                     'om_hydraulic','om_thermal','h2o_canopy_max','kmax', 'kmax_v2', 'mineral_hydraulic','luna']
+                      'b_slope', 'b_intercept', 'log_psis_slope', 'log_psis_intercept', 
+                      'log_ks_slope', 'log_ks_intercept', 'thetas_slope', 'thetas_intercept',
+                      'om_hydraulic','om_thermal','h2o_canopy_max','kmax', 'kmax_v2', 'mineral_hydraulic','luna','d_max']
 
 # Very important: define all parameters that can be assimilated by adjusting the surface file (surfdata_EUR-11....nc)
 all_clm_surfparameters = ['sandfrac_anom','clayfrac_anom','orgfrac_anom']
