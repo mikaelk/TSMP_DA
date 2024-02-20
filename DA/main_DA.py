@@ -30,9 +30,9 @@ def realize_parameters(i_real,settings_gen,settings_run,init=True,run_prior=Fals
     '''
     This function:
     1) in case 'init' is True, -the prior parameter settings are read (e.g. at iteration 0), 
-                               -perturbations of the parameters are created, 
+                               -perturbations of the parameters are created (np.normal), 
                                -parameter files are written
-                               -the parameter generation functions are called, that adjust the CLM .nc files 
+                               -the parameter generation functions are called (from generate_parameters.py), that adjust the CLM .nc files 
     2) in case 'init' is False, the parameter generation functions are simply called for each parameter, adjusting the .nc files
     run_prior: if true, it simply creates a realization for the most likely prior parameter values (can be used to evaluate the prior parameter settings)
     '''
@@ -44,7 +44,7 @@ def realize_parameters(i_real,settings_gen,settings_run,init=True,run_prior=Fals
         print('Creating parameter realizations for ensemble member %i' % i_real)
         print('Creating folder for realization %i: %s' % (i_real,dir_real), flush=True )
         os.mkdir(dir_real)
-        time.sleep(1)
+        time.sleep(1) #probably unnecessary, had some troubles with deadlocks..
         
         if init:
             print('Initializing parameters from prior parameter settings')
