@@ -777,6 +777,10 @@ if __name__ == '__main__':
         pool.starmap(setup_submit_wait, zip(list_i_real,repeat(settings_run),repeat(settings_clm),
                                            repeat(settings_pfl),repeat(settings_sbatch),repeat(date_results_iter)) )
 
+    # n_ensemble, reread_required = check_for_success(dir_iter,dir_DA,dir_settings,date_results_iter,n_ensemble)
+    # if reread_required:
+    #     param_f,_,_,_ = read_parameters(n_ensemble,settings_gen,settings_run)
+
     operator = {}
     data_measured = {}
     operator['SMAP'] = operator_clm_SMAP(settings_DA['file_lsm'],settings_DA['file_corner'],settings_DA['folder_SMAP'],ignore_rivers=False)
@@ -786,17 +790,18 @@ if __name__ == '__main__':
 
     dir_figures_validation = os.path.join(settings_run['dir_figs'],'validation')
     for i_real in list_i_real:
+        try:
+            if i_real == 0 or i_real == n_ensemble+1: #plot DA and OL
+                _ = operator['SMAP'].interpolate_model_results(i_real,settings_run,indices_z=[0,1],var='SOILLIQ')
+                _ = operator['FLX'].interpolate_model_results(i_real,settings_run,retain_history=True)
 
-        if i_real == 0 or i_real == n_ensemble+1: #plot DA and OL
-            _ = operator['SMAP'].interpolate_model_results(i_real,settings_run,indices_z=[0,1],var='SOILLIQ')
-            _ = operator['FLX'].interpolate_model_results(i_real,settings_run,retain_history=True)
-        
-            operator['SMAP'].plot_results(i_iter,i_real,settings_run,dir_figs=dir_figures_validation,indices_z=0,var='SOILLIQ',n_plots=24*4)
-            operator['FLX'].plot_results(i_iter,i_real,settings_run,dir_figs=dir_figures_validation)
-        else:
-            _ = operator['SMAP'].interpolate_model_results(i_real,settings_run,indices_z=[0,1],var='SOILLIQ')
-            _ = operator['FLX'].interpolate_model_results(i_real,settings_run)
-        
+                operator['SMAP'].plot_results(i_iter,i_real,settings_run,dir_figs=dir_figures_validation,indices_z=0,var='SOILLIQ',n_plots=24*4)
+                operator['FLX'].plot_results(i_iter,i_real,settings_run,dir_figs=dir_figures_validation)
+            else:
+                _ = operator['SMAP'].interpolate_model_results(i_real,settings_run,indices_z=[0,1],var='SOILLIQ')
+                _ = operator['FLX'].interpolate_model_results(i_real,settings_run)
+        except:
+            print('Interpolation %i failed, perhaps the run crashed'%i_real)
             
     if 'FLX' in data_names and plot_members_FLX:
         operator['FLX'].plot_all_results(i_iter,settings_run,dir_figs=dir_figures_validation)

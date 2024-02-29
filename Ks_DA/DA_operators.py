@@ -466,10 +466,10 @@ class operator_clm_FLX:
             return self.flatten_y(self.data_flx,var_='LE_CORR'), variance_return**2    
     
     
-    def interpolate_model_results(self,i_real,settings_run,var='QFLX_EVAP_TOT',history_stream='h2',file_type='pft',retain_history=False):
+    def interpolate_model_results(self,i_real,settings_run,var='QFLX_EVAP_TOT',history_stream='h2',file_type='pft',retain_history=False,reread_history=False):
         
         filename_pickle = os.path.join(settings_run['dir_iter'],'R%3.3i/data_FLX.pickle' % i_real)
-        if os.path.exists(filename_pickle):
+        if os.path.exists(filename_pickle) and not reread_history:
             dict_results = load_dict_from_pickle(filename_pickle)
             self.data_TSMP_i = dict_results['data_TSMP_i']
             self.files_clm = dict_results['files_clm'] 
